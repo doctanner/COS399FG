@@ -8,7 +8,6 @@
 /**
  * @author James Tanner
  *
- * THIS VERSION IS IN THE MASTER BRANCH.
  */
 public class FindGoal {
 
