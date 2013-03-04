@@ -24,16 +24,16 @@ public class FindGoal {
 	private static final int CENTER_TO_SENSOR = 5; // TODO DETERMINE
 
 	// Movement constants:
-	private static final int DRIVE_SPEED = 400;
+	private static final int DRIVE_SPEED = 600;
 	private static final int GRID_SIZE = 10 + CENTER_TO_SENSOR;
 	private static final int DEGREES_PER_METER = 11345; // TODO Fine tune.
 	private static final int DEGREE_PER_360 = 6077; // TODO DETERMINE
 
 	// Light Sensor Constants:
-	private static final SensorPort SENSE_PORT = SensorPort.S1;
+	private static final SensorPort SENSE_PORT = SensorPort.S3;
 	private static final int FLOOD_COLOR = ColorSensor.BLUE;
-	private static final int TARGET_COLOR = ColorSensor.GREEN;
-	private static final int HOME_COLOR = ColorSensor.RED;
+	private static final int COLOR_GOAL = ColorSensor.GREEN;
+	private static final int COLOR_HOME = ColorSensor.RED;
 
 	// Objects:
 	protected static final RegulatedMotor motorLeft = Motor.B;
@@ -55,9 +55,6 @@ public class FindGoal {
 		pilot.setDaemon(true);
 		pilot.start();
 
-		// Wait to start.
-		Button.ENTER.waitForPressAndRelease();
-
 		int turnDir = 1;
 		
 		while (true) {
@@ -70,18 +67,28 @@ public class FindGoal {
 
 			Sound.beep();
 			pilot.emergencyStop();
-
 			pilot.pushTask(Task.TASK_ROTATE,turnDir * 90, null);
 			pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
 			pilot.pushTask(Task.TASK_ROTATE,turnDir * 90, null);
-			
 			pilot.resumeFromStop();
 			
-			while (pilot.performingTasks) Thread.yield();
+			do {
+				Thread.yield();
+			} while (pilot.performingTasks);
 			
 			pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 
 		}
+	}
+	
+	private static void searchForGoal(){
+		while (sense.getColorID() != COLOR_GOAL){
+			// TODO Look for goal.
+		}
+	}
+	
+	private static void goHome(){
+		// TODO Go home.
 	}
 
 	private static class Position {
@@ -269,7 +276,7 @@ public class FindGoal {
 			while (adjustingMotors.getAndSet(true))
 				Thread.yield();
 			motorLeft.stop(true);
-			motorLeft.stop(true);
+			motorRight.stop(true);
 			adjustingMotors.set(false);
 
 			// Wait until operation completes.
