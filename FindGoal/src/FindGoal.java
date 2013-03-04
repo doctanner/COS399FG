@@ -21,8 +21,8 @@ import lejos.robotics.RegulatedMotor;
  */
 public class FindGoal {
 	// Movement constants:
-	private static final int DRIVE_SPEED = 700;
-	private static final int GRID_SIZE = 15;
+	private static final int DRIVE_SPEED = 500;
+	private static final int GRID_SIZE = 10;
 	private static final int DEGREES_PER_METER = 11345; // TODO Fine tune.
 	private static final int DEGREE_PER_360 = 5892; // TODO DETERMINE
 
@@ -60,14 +60,11 @@ public class FindGoal {
 		
 		// Run tests:
 		pilot.pushTask(Task.TASK_DRIVE, 28, null);
-		pilot.pushTask(Task.TASK_DRIVE, -28, null);
-		Button.ENTER.waitForPressAndRelease();
-		
 		pilot.pushTask(Task.TASK_ROTATE, 90, null);
 		pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
-		pilot.pushTask(Task.TASK_DRIVE, 90, null);
+		pilot.pushTask(Task.TASK_ROTATE, 90, null);
+		pilot.pushTask(Task.TASK_DRIVE, 28, null);
 		pilot.pushTask(Task.TASK_STOP, 0, null);
-		Button.ENTER.waitForPressAndRelease();
 		
 		// Wait for complete.
 		do{
@@ -78,6 +75,7 @@ public class FindGoal {
 		LCD.drawString("Stopped position:", 0, 0);
 		LCD.drawString("X: " + endPos.x, 0, 1);
 		LCD.drawString("Y: " + endPos.y, 0, 2);
+		LCD.drawString("h: " + pilot.currHeading, 0, 3);
 		
 		Button.ESCAPE.waitForPressAndRelease();
 		
@@ -115,8 +113,8 @@ public class FindGoal {
 	}
 
 	private static class Pilot extends Thread {
-		Position lastWP;
-		int currHeading;
+		Position lastWP = new Position(0,0);
+		int currHeading = 0;
 		boolean performingTasks = false;
 		Flag.BoolFlag eStopped = new Flag.BoolFlag(false);
 		Flag.BoolFlag adjustingMotors = new Flag.BoolFlag(false);
@@ -147,6 +145,11 @@ public class FindGoal {
 		}
 
 		public void run() {
+			
+			while(adjustingMotors.getAndSet(true)) Thread.yield();
+			motorLeft.setSpeed(DRIVE_SPEED);
+			motorRight.setSpeed(DRIVE_SPEED);
+			adjustingMotors.set(false);
 
 			while (true) {
 				// If stop requested, do not run through tasks.
@@ -282,6 +285,8 @@ public class FindGoal {
 		private void drive(int dist) {
 			// TODO ASSERT stopped
 
+			LCD.drawString("Moving " + dist + "cm", 0, 4);
+			
 			// Drive to new position.
 			int rotDegree = ((-1 * dist) * DEGREES_PER_METER) / 100;
 			while (adjustingMotors.getAndSet(true))
@@ -291,7 +296,6 @@ public class FindGoal {
 			adjustingMotors.set(false);
 
 			// Wait until operation completes.
-			LCD.drawString("Moving" + dist, 0, 4);
 			waitUntilStopped(true);
 			LCD.clear(4);
 		}
@@ -299,6 +303,8 @@ public class FindGoal {
 		private void rotate(int angle) {
 			// TODO: ASSERT stopped
 
+			LCD.drawString("Rotating " + angle, 0, 4);
+			
 			// Update position.
 			Position currPos = getPosition();
 
@@ -312,7 +318,7 @@ public class FindGoal {
 			motorLeft.rotate(left, true);
 			motorRight.rotate(right, true);
 			adjustingMotors.set(false);
-
+			
 			// Wait until rotation completes.
 			waitUntilStopped(false);
 
@@ -327,13 +333,21 @@ public class FindGoal {
 			int x = centerx + (int) (CENTER_TO_SENSOR * Math.cos(newHeading));
 			int y = centery + (int) (CENTER_TO_SENSOR * Math.sin(newHeading));
 			
-			
 			// Update position
 			// TODO Synchronize.
 			while (acessinggWP.getAndSet(true)) Thread.yield();
-			lastWP = getPosition();
+			lastWP = new Position(x,y);
 			currHeading = newHeading;
 			acessinggWP.set(false);
+			
+			// Reset tachos
+			while (adjustingMotors.getAndSet(true))
+				Thread.yield();
+			motorLeft.resetTachoCount();
+			motorRight.resetTachoCount();
+			adjustingMotors.set(false);
+			
+			LCD.clear(4);
 		}
 
 		private void waitUntilStopped(boolean interruptOnStopFlag) {
