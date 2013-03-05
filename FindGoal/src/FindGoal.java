@@ -288,16 +288,8 @@ public class FindGoal {
 			int newHeading = (int) Math.toDegrees(Math.atan2(deltaY, deltaX));
 			int adjustHeading = newHeading - startHeading;
 
-			// Turn to new position.
+			// Go to new position.
 			rotate(adjustHeading);
-
-			// Report.
-			Sound.beep();
-			LCD.drawString("Will drive " + dist, 0, 6);
-			Button.ENTER.waitForPressAndRelease();
-			LCD.clear(6);
-
-			// Drive distance.
 			drive(dist);
 		}
 
@@ -354,8 +346,6 @@ public class FindGoal {
 
 			// Update position.
 			Position currPos = getPosition();
-
-			Button.ENTER.waitForPressAndRelease();
 
 			// Turn.
 			int degreesToRotate = (angle * DEGREE_PER_360) / 360;
