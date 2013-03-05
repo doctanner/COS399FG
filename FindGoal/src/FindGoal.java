@@ -2,6 +2,7 @@ import java.util.Queue;
 
 import lejos.nxt.Button;
 import lejos.nxt.ColorSensor;
+import lejos.nxt.ColorSensor.Color;
 import lejos.nxt.LCD;
 import lejos.nxt.Motor;
 import lejos.nxt.SensorPort;
@@ -24,15 +25,14 @@ public class FindGoal {
 	private static final int CENTER_TO_SENSOR = 0; // TODO DETERMINE
 
 	// Movement constants:
-	private static final int DRIVE_SPEED = 600;
-	private static final int GRID_SIZE = 10 + CENTER_TO_SENSOR;
+	private static final int DRIVE_SPEED = 700;
+	private static final int GRID_SIZE = 15 + CENTER_TO_SENSOR;
 	private static final int DEGREES_PER_METER = -11345; // TODO Fine tune.
 	private static final int DEGREE_PER_360 = 6077; // TODO DETERMINE
 
 	// Light Sensor Constants:
 	private static final SensorPort SENSE_PORT = SensorPort.S3;
-	private static final int FLOOD_COLOR = ColorSensor.BLUE;
-	private static final int COLOR_GOAL = ColorSensor.GREEN;
+	private static final int COLOR_GOAL = ColorSensor.BLUE;
 	private static final int COLOR_HOME = ColorSensor.RED;
 
 	// Objects:
@@ -58,29 +58,60 @@ public class FindGoal {
 		// Wait to start.
 		Button.ENTER.waitForPressAndRelease();
 
-		pilot.getPosition();
-
-		// Drive to some place.
-		pilot.pushTask(Task.TASK_DRIVE, 50, null);
-		pilot.pushTask(Task.TASK_ROTATE, 90, null);
-		pilot.pushTask(Task.TASK_DRIVE, 20, null);
-		Thread.yield();
-		while (pilot.performingTasks)
-			Thread.yield();
+		searchForGoal(pilot);
 
 		// Come home.
 		Sound.beep();
 		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0, 0));
-		Thread.yield();
-		while (pilot.performingTasks)
+
+		do {
 			Thread.yield();
+		} while (pilot.performingTasks);
 
 		Button.ESCAPE.waitForPressAndRelease();
 	}
 
-	private static void searchForGoal() {
-		while (sense.getColorID() != COLOR_GOAL) {
-			// TODO Look for goal.
+	private static void searchForGoal(Pilot pilot) {
+		final int MAX_DIST = 80;
+
+		pilot.pushTask(Task.TASK_DRIVE, MAX_DIST, null);
+		boolean foundGoal = false;
+		int turnDir = -1;
+		
+		while (!foundGoal) {
+			Color currColor = sense.getColor();
+			switch (currColor.getColor()) {
+			
+			case COLOR_GOAL:
+				pilot.emergencyStop();
+				Sound.beepSequenceUp();
+				pilot.eraseTasks();
+				return;
+				
+			case ColorSensor.BLACK:
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.resumeFromStop();
+				Thread.yield();
+				pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
+				pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
+				pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
+				turnDir *= -1;
+				do {
+					Thread.yield();
+				} while (pilot.performingTasks);
+				
+				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+				break;
+				
+			case ColorSensor.WHITE:
+				break;
+				
+			default:
+				Sound.beepSequence();
+			}
+
+			Thread.yield();
 		}
 	}
 
@@ -135,6 +166,7 @@ public class FindGoal {
 				Position posVal) {
 			// TODO Validate new task.
 			taskQueue.push(new Task(taskID, intVal, posVal));
+			performingTasks = true;
 		}
 
 		private synchronized Task popTask() {
