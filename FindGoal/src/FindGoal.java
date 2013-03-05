@@ -21,7 +21,7 @@ import lejos.robotics.RegulatedMotor;
  */
 public class FindGoal {
 	// Construction Constants:
-	private static final int CENTER_TO_SENSOR = 5; // TODO DETERMINE
+	private static final int CENTER_TO_SENSOR = 0; // TODO DETERMINE
 
 	// Movement constants:
 	private static final int DRIVE_SPEED = 600;
@@ -55,30 +55,26 @@ public class FindGoal {
 		pilot.setDaemon(true);
 		pilot.start();
 
-		int turnDir = 1;
+		// Wait to start.
+		Button.ENTER.waitForPressAndRelease();
 		
-		while (true) {
-			turnDir = turnDir * -1;
-			
-			pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+		pilot.getPosition();
+		
+		// Drive to some place.
+		pilot.pushTask(Task.TASK_DRIVE, 50, null);
+		pilot.pushTask(Task.TASK_ROTATE, 90, null);
+		pilot.pushTask(Task.TASK_DRIVE, 20, null);
+		Thread.yield();
+		while (pilot.performingTasks) Thread.yield();
+		
+		// Come home.
+		Sound.beep();
+		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0,0));
+		Thread.yield();
+		while (pilot.performingTasks) Thread.yield();
+		
 
-			while (sense.getColorID() != sense.BLACK)
-				Thread.yield();
-
-			Sound.beep();
-			pilot.emergencyStop();
-			pilot.pushTask(Task.TASK_ROTATE,turnDir * 90, null);
-			pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
-			pilot.pushTask(Task.TASK_ROTATE,turnDir * 90, null);
-			pilot.resumeFromStop();
-			
-			do {
-				Thread.yield();
-			} while (pilot.performingTasks);
-			
-			pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
-
-		}
+		Button.ESCAPE.waitForPressAndRelease();
 	}
 	
 	private static void searchForGoal(){
@@ -128,7 +124,7 @@ public class FindGoal {
 		boolean performingTasks = false;
 		Flag.BoolFlag eStopped = new Flag.BoolFlag(false);
 		Flag.BoolFlag adjustingMotors = new Flag.BoolFlag(false);
-		Flag.BoolFlag acessingWP = new Flag.BoolFlag(false);
+		Flag.BoolFlag accessingWP = new Flag.BoolFlag(false);
 		Flag.BoolFlag calculatingPos = new Flag.BoolFlag(false);
 		Flag.BoolFlag inTask = new Flag.BoolFlag(false);
 
@@ -243,33 +239,60 @@ public class FindGoal {
 				Thread.yield();
 
 			// Get current positional data.
-			while (acessingWP.getAndSet(true))
+			while (accessingWP.getAndSet(true))
 				Thread.yield();
 			Position startPos = lastWP;
-			int startHeading = currHeading;
-			acessingWP.set(false);
 
 			// Get distance
 			int dist = motorLeft.getTachoCount() + motorRight.getTachoCount();
 			dist = ((dist >> 1) * 100) / DEGREES_PER_METER;
 
 			// Calculate new x and y coordinates.
-			int x = startPos.x + (int) (dist * Math.cos(startHeading));
-			int y = startPos.y + (int) (dist * Math.sin(startHeading));
+			int x = startPos.x + (int) (dist * Math.cos(currHeading));
+			int y = startPos.y + (int) (dist * Math.sin(currHeading));
 
 			// Release lock.
+			accessingWP.set(false);
 			calculatingPos.set(false);
+			
+			LCD.drawString("Last Position:", 0, 0);
+			LCD.drawString("X: " + x, 0, 1);
+			LCD.drawString("y: " + y, 0, 2);
+			LCD.drawString("Head: " + currHeading, 0, 3);
+			
+			
 
 			return new Position(x, y);
 		}
 
-		private void goTo(Position wayPoint) {
+		private void goTo(Position destPos) {
 			// TODO ASSERT stopped
+			
+			// Get current position data.
+			Position currPos = getPosition();
+			while (accessingWP.getAndSet(true)) Thread.yield();
+			int startHeading = currHeading;
+			accessingWP.set(false);
+			
+			Sound.beep();
+			Button.ENTER.waitForPressAndRelease();
 
-			// TODO Use inTask and stop flags to synchronize and exit safely.
-			// TODO Use flag to protect motor commands.
-			// TODO Go to waypoint.
-			// TODO Use stop flag to exit.
+			// Calculate distance to destination.
+			long deltaX = destPos.x - currPos.x;
+			long deltaY = destPos.y - currPos.y;
+			int dist = (int) Math.sqrt((deltaX ^ 2) + (deltaY ^ 2));
+			
+			// Calculate angle.
+			int newHeading = (int) Math.toDegrees(Math.atan2(deltaY, deltaX));
+			int adjustHeading = newHeading - startHeading;
+			
+			// Turn to new position.
+			Sound.beep();
+			rotate(adjustHeading);
+			
+			// Drive distance.
+			Sound.beep();
+			drive(dist);
 		}
 
 		private void stop() {
@@ -323,8 +346,8 @@ public class FindGoal {
 
 			// Turn.
 			int degreesToRotate = (angle * DEGREE_PER_360) / 360;
-			int left = degreesToRotate;
-			int right = 0 - degreesToRotate;
+			int left = 0 - degreesToRotate;
+			int right = degreesToRotate;
 
 			while (adjustingMotors.getAndSet(true))
 				Thread.yield();
@@ -349,7 +372,7 @@ public class FindGoal {
 			int y = centery + (int) (CENTER_TO_SENSOR * Math.sin(newHeading));
 
 			// Get locks on waypoint and motors.
-			while (acessingWP.getAndSet(true))
+			while (accessingWP.getAndSet(true))
 				Thread.yield();
 			while (adjustingMotors.getAndSet(true))
 				Thread.yield();
@@ -365,7 +388,7 @@ public class FindGoal {
 
 			// Release locks.
 			adjustingMotors.set(false);
-			acessingWP.set(false);
+			accessingWP.set(false);
 			LCD.clear(4);
 		}
 

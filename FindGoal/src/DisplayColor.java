@@ -28,6 +28,8 @@ public class DisplayColor {
 			LCD.drawInt(colorVal.getBlue(), 3, 2, 3);
 			LCD.drawInt(colorVal.getBackground(), 3, 2, 4);
 		}
+		
+		int temp = Color.RED;
 
 	}
 
