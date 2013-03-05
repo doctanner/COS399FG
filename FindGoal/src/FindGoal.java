@@ -26,7 +26,7 @@ public class FindGoal {
 	// Movement constants:
 	private static final int DRIVE_SPEED = 600;
 	private static final int GRID_SIZE = 10 + CENTER_TO_SENSOR;
-	private static final int DEGREES_PER_METER = 11345; // TODO Fine tune.
+	private static final int DEGREES_PER_METER = -11345; // TODO Fine tune.
 	private static final int DEGREE_PER_360 = 6077; // TODO DETERMINE
 
 	// Light Sensor Constants:
@@ -57,33 +57,34 @@ public class FindGoal {
 
 		// Wait to start.
 		Button.ENTER.waitForPressAndRelease();
-		
+
 		pilot.getPosition();
-		
+
 		// Drive to some place.
 		pilot.pushTask(Task.TASK_DRIVE, 50, null);
 		pilot.pushTask(Task.TASK_ROTATE, 90, null);
 		pilot.pushTask(Task.TASK_DRIVE, 20, null);
 		Thread.yield();
-		while (pilot.performingTasks) Thread.yield();
-		
+		while (pilot.performingTasks)
+			Thread.yield();
+
 		// Come home.
 		Sound.beep();
-		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0,0));
+		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0, 0));
 		Thread.yield();
-		while (pilot.performingTasks) Thread.yield();
-		
+		while (pilot.performingTasks)
+			Thread.yield();
 
 		Button.ESCAPE.waitForPressAndRelease();
 	}
-	
-	private static void searchForGoal(){
-		while (sense.getColorID() != COLOR_GOAL){
+
+	private static void searchForGoal() {
+		while (sense.getColorID() != COLOR_GOAL) {
 			// TODO Look for goal.
 		}
 	}
-	
-	private static void goHome(){
+
+	private static void goHome() {
 		// TODO Go home.
 	}
 
@@ -244,54 +245,59 @@ public class FindGoal {
 			Position startPos = lastWP;
 
 			// Get distance
-			int dist = motorLeft.getTachoCount() + motorRight.getTachoCount();
-			dist = ((dist >> 1) * 100) / DEGREES_PER_METER;
+			int degTravelled = motorLeft.getTachoCount()
+					+ motorRight.getTachoCount();
+			degTravelled >>= 1;
+			int dist = (degTravelled * 100) / DEGREES_PER_METER;
 
 			// Calculate new x and y coordinates.
-			int x = startPos.x + (int) (dist * Math.cos(currHeading));
-			int y = startPos.y + (int) (dist * Math.sin(currHeading));
+			double radHeading = Math.toRadians(currHeading);
+			int x = startPos.x + (int) (dist * Math.cos(radHeading));
+			int y = startPos.y + (int) (dist * Math.sin(radHeading));
 
 			// Release lock.
 			accessingWP.set(false);
 			calculatingPos.set(false);
-			
+
 			LCD.drawString("Last Position:", 0, 0);
 			LCD.drawString("X: " + x, 0, 1);
 			LCD.drawString("y: " + y, 0, 2);
 			LCD.drawString("Head: " + currHeading, 0, 3);
-			
-			
 
 			return new Position(x, y);
 		}
 
 		private void goTo(Position destPos) {
 			// TODO ASSERT stopped
-			
+
 			// Get current position data.
 			Position currPos = getPosition();
-			while (accessingWP.getAndSet(true)) Thread.yield();
+			while (accessingWP.getAndSet(true))
+				Thread.yield();
 			int startHeading = currHeading;
 			accessingWP.set(false);
-			
-			Sound.beep();
-			Button.ENTER.waitForPressAndRelease();
 
 			// Calculate distance to destination.
 			long deltaX = destPos.x - currPos.x;
 			long deltaY = destPos.y - currPos.y;
-			int dist = (int) Math.sqrt((deltaX ^ 2) + (deltaY ^ 2));
-			
+			long sqX = deltaX * deltaX;
+			long sqY = deltaY * deltaY;
+			int dist = (int) Math.sqrt(sqX + sqY);
+
 			// Calculate angle.
 			int newHeading = (int) Math.toDegrees(Math.atan2(deltaY, deltaX));
 			int adjustHeading = newHeading - startHeading;
-			
+
 			// Turn to new position.
-			Sound.beep();
 			rotate(adjustHeading);
-			
-			// Drive distance.
+
+			// Report.
 			Sound.beep();
+			LCD.drawString("Will drive " + dist, 0, 6);
+			Button.ENTER.waitForPressAndRelease();
+			LCD.clear(6);
+
+			// Drive distance.
 			drive(dist);
 		}
 
@@ -324,7 +330,7 @@ public class FindGoal {
 			LCD.drawString("Moving " + dist + "cm", 0, 4);
 
 			// Drive to new position.
-			int rotDegree = ((-1 * dist) * DEGREES_PER_METER) / 100;
+			int rotDegree = (dist * DEGREES_PER_METER) / 100;
 			while (adjustingMotors.getAndSet(true))
 				Thread.yield();
 			motorLeft.rotate(rotDegree, true);
@@ -339,10 +345,17 @@ public class FindGoal {
 		private void rotate(int angle) {
 			// TODO: ASSERT stopped
 
+			if (angle > 180)
+				angle -= 360;
+			else if (angle < -180)
+				angle += 360;
+
 			LCD.drawString("Rotating " + angle, 0, 4);
 
 			// Update position.
 			Position currPos = getPosition();
+
+			Button.ENTER.waitForPressAndRelease();
 
 			// Turn.
 			int degreesToRotate = (angle * DEGREE_PER_360) / 360;
@@ -359,10 +372,11 @@ public class FindGoal {
 			waitUntilStopped(false);
 
 			// Calculate center position.
+			double radHeading = Math.toRadians(currHeading);
 			int centerx = currPos.x
-					- (int) (CENTER_TO_SENSOR * Math.cos(currHeading));
+					- (int) (CENTER_TO_SENSOR * Math.cos(radHeading));
 			int centery = currPos.y
-					- (int) (CENTER_TO_SENSOR * Math.sin(currHeading));
+					- (int) (CENTER_TO_SENSOR * Math.sin(radHeading));
 
 			// Calculate heading.
 			int newHeading = (angle + currHeading) % 360;
