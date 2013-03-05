@@ -25,7 +25,7 @@ public class FindGoal {
 	private static final int CENTER_TO_SENSOR = 0; // TODO DETERMINE
 
 	// Movement constants:
-	private static final int DRIVE_SPEED = 700;
+	private static final int DRIVE_SPEED = 850;
 	private static final int GRID_SIZE = 15 + CENTER_TO_SENSOR;
 	private static final int DEGREES_PER_METER = -11345; // TODO Fine tune.
 	private static final int DEGREE_PER_360 = 6077; // TODO DETERMINE
@@ -61,7 +61,10 @@ public class FindGoal {
 		searchForGoal(pilot);
 
 		// Come home.
-		Sound.beep();
+		Sound.beepSequenceUp();
+		Sound.beepSequenceUp();
+		Sound.beepSequenceUp();
+		
 		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0, 0));
 
 		do {
@@ -72,9 +75,8 @@ public class FindGoal {
 	}
 
 	private static void searchForGoal(Pilot pilot) {
-		final int MAX_DIST = 80;
 
-		pilot.pushTask(Task.TASK_DRIVE, MAX_DIST, null);
+		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 		boolean foundGoal = false;
 		int turnDir = -1;
 		
@@ -84,8 +86,8 @@ public class FindGoal {
 			
 			case COLOR_GOAL:
 				pilot.emergencyStop();
-				Sound.beepSequenceUp();
 				pilot.eraseTasks();
+				pilot.resumeFromStop();
 				return;
 				
 			case ColorSensor.BLACK:
@@ -93,6 +95,7 @@ public class FindGoal {
 				pilot.eraseTasks();
 				pilot.resumeFromStop();
 				Thread.yield();
+				pilot.pushTask(Task.TASK_DRIVE, -5, null);
 				pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
 				pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
 				pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
