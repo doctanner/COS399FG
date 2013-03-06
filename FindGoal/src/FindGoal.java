@@ -67,17 +67,23 @@ public class FindGoal {
 		Sound.beepSequenceUp();
 
 		// Find home.
-		goHome(pilot);
+		boolean foundHome = goHome(pilot);
 
 		// Sound victory.
 		pilot.getPosition();
-		Sound.beepSequence();
-		Sound.beepSequence();
-		Sound.beepSequence();
-		
-		LCD.clear(0);
-		LCD.drawString("FOUND GOAL!", 0, 0);
-		
+
+		if (foundHome) {
+			Sound.beepSequence();
+			Sound.beepSequence();
+			Sound.beepSequence();
+
+			LCD.clear(0);
+			LCD.drawString("FOUND GOAL!", 0, 0);
+		} else {
+			LCD.clear(0);
+			LCD.drawString("Failed. :(", 0, 0);
+		}
+
 		// Wait for permission to stop.
 		Button.ESCAPE.waitForPressAndRelease();
 	}
@@ -120,7 +126,7 @@ public class FindGoal {
 		}
 	}
 
-	private static void goHome(Pilot pilot) {
+	private static boolean goHome(Pilot pilot) {
 		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0, 0));
 		int colorVal;
 		boolean foundHome = false;
@@ -131,7 +137,7 @@ public class FindGoal {
 			// If home found...
 			if (colorVal == COLOR_HOME) {
 				pilot.emergencyStop();
-				return;
+				return true;
 			}
 
 			// If edge found...
@@ -148,42 +154,31 @@ public class FindGoal {
 		} while (pilot.performingTasks);
 
 		// Check in a circle.
+		pilot.emergencyStop();
 		for (int i = 0; i < 24; i++) {
 			// Rotate 15 degrees.
+			pilot.pushTask(Task.TASK_DRIVE, 30, null);
+			pilot.pushTask(Task.TASK_DRIVE, -30, null);
 			pilot.pushTask(Task.TASK_ROTATE, 15, null);
-
-			// Wait until rotation is complete.
-			do {
-				colorVal = sense.getColor().getColor();
-				if (colorVal == COLOR_HOME)
-					foundHome = true;
-				Thread.yield();
-			} while (pilot.performingTasks);
-
-			// If we found the home circle this angle...
-			// TODO Add sweep method to pilot thread, to avoid small angles.
-			if (foundHome) {
-				// Attempt to drive onto it and return.
-				pilot.pushTask(Task.TASK_ROTATE, -7, null);
-				pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
-				do {
-					Thread.yield();
-				} while (pilot.performingTasks);
-
-				// Confirm placement.
-				colorVal = sense.getColor().getColor();
-				if (colorVal == COLOR_HOME)
-					return;
-
-				else {
-					i = 0;
-					foundHome = false;
-				}
-			}
 		}
-		
-		// Check in a spray.
+		pilot.resumeFromStop();
+
+		// Watch for home.
+		do {
+			colorVal = sense.getColor().getColor();
+			if (colorVal == COLOR_HOME) {
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				return true;
+			} else if (colorVal == ColorSensor.BLACK) {
+				pilot.emergencyStop();
+				pilot.resumeFromStop();
+			}
+			Thread.yield();
+		} while (pilot.performingTasks);
+
 		// TODO Create alternate search pattern.
+		return false;
 
 	}
 
@@ -324,12 +319,14 @@ public class FindGoal {
 				Thread.yield();
 
 			// Halt.
-			while (adjustingMotors.getAndSet(true)) Thread.yield();
+			while (adjustingMotors.getAndSet(true))
+				Thread.yield();
 			motorLeft.setAcceleration(ESTOP_ACCEL);
 			motorRight.setAcceleration(ESTOP_ACCEL);
 			adjustingMotors.set(false);
 			stop();
-			while (adjustingMotors.getAndSet(true)) Thread.yield();
+			while (adjustingMotors.getAndSet(true))
+				Thread.yield();
 			motorLeft.setAcceleration(DRIVE_ACCEL);
 			motorRight.setAcceleration(DRIVE_ACCEL);
 			adjustingMotors.set(false);
@@ -422,7 +419,7 @@ public class FindGoal {
 			motorLeft.backward();
 			motorRight.backward();
 			adjustingMotors.set(false);
-			
+
 			// Continue until emergency stop.
 			waitUntilStopped(true);
 		}
