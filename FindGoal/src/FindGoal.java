@@ -25,13 +25,13 @@ public class FindGoal {
 	private static final int CENTER_TO_SENSOR = 5; // TODO DETERMINE
 
 	// Movement constants:
-	private static final int DRIVE_SPEED = 850; // Known Good: 700
-	private static final int DRIVE_ACCEL = 500; // Known Good: 600
-	private static final int ESTOP_ACCEL = 1500; // Known Good: 600
-	private static final int ROTATE_SPEED = 350; // Known Good: 300
-	private static final int REVERSE_DIST = -15; // Known Good: 20
-	private static final int GRID_SIZE = 10 + CENTER_TO_SENSOR;
-	private static final int SEARCH_SIZE = 20;
+	private static final int DRIVE_SPEED = 850; // Known Good: 850
+	private static final int DRIVE_ACCEL = 500; // Known Good: 500
+	private static final int ESTOP_ACCEL = 1500; // Known Good: 1500
+	private static final int ROTATE_SPEED = 350; // Known Good: 350
+	private static final int REVERSE_DIST = -10; // Known Good: -10
+	private static final int GRID_SIZE = 7 + CENTER_TO_SENSOR; // Known Good: 7 +
+	private static final int SEARCH_SIZE = 20; // Known Good: 20
 	private static final int DEGREES_PER_METER = -11345; // TODO Fine tune.
 	private static final int DEGREE_PER_360 = 6065; // Determined: 6077
 
@@ -43,6 +43,7 @@ public class FindGoal {
 	// Search Constants:
 	private static final int MODE_NORMAL = 0;
 	private static final int MODE_FAR = 1;
+	private static final int MODE_CURRENT = MODE_FAR;
 
 	// Objects:
 	protected static final RegulatedMotor motorLeft = Motor.B;
@@ -64,7 +65,7 @@ public class FindGoal {
 		Button.ENTER.waitForPressAndRelease();
 
 		// Find the goal.
-		searchForGoal(pilot, MODE_FAR);
+		searchForGoal(pilot, MODE_CURRENT);
 
 		// Sound victory.
 		Sound.beepSequenceUp();
@@ -99,7 +100,7 @@ public class FindGoal {
 		boolean foundWall = false;
 		int turnDir = 1;
 
-		while (!foundWall) {
+		while (true) {
 			Color currColor = sense.getColor();
 			switch (currColor.getColor()) {
 
@@ -117,19 +118,24 @@ public class FindGoal {
 				
 				if (!foundWall && mode == MODE_FAR) {
 					pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+					do {
+						Thread.yield();
+					} while (pilot.performingTasks);
+					
 					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
 					foundWall = true;
 
 				} else {
 					pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+					do {
+						Thread.yield();
+					} while (pilot.performingTasks);
+					
 					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
 					pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
 					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
 					turnDir *= -1;
 				}
-				do {
-					Thread.yield();
-				} while (pilot.performingTasks);
 
 				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 				break;
@@ -142,7 +148,6 @@ public class FindGoal {
 	private static boolean goHome(Pilot pilot) {
 		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0, 0));
 		int colorVal;
-		boolean foundHome = false;
 
 		do {
 			colorVal = sense.getColor().getColor();
@@ -167,12 +172,30 @@ public class FindGoal {
 		} while (pilot.performingTasks);
 
 		// Check in a circle.
-		pilot.emergencyStop();
 		for (int i = 0; i < 12; i++) {
-			// Rotate 15 degrees.
+			
+			// Check SEACH_SIZE forward with sensor on.
 			pilot.pushTask(Task.TASK_DRIVE, SEARCH_SIZE, null);
+			do {
+				colorVal = sense.getColor().getColor();
+				if (colorVal == COLOR_HOME) {
+					pilot.emergencyStop();
+					pilot.eraseTasks();
+					return true;
+				} else if (colorVal == ColorSensor.BLACK) {
+					pilot.emergencyStop();
+					pilot.resumeFromStop();
+					break;
+				}
+				Thread.yield();
+			} while (pilot.performingTasks);
+			
+			// Backup and rotate 90 degrees with sensor off.
 			pilot.pushTask(Task.TASK_DRIVE, -SEARCH_SIZE, null);
 			pilot.pushTask(Task.TASK_ROTATE, 30, null);
+			do{
+				Thread.yield();
+			} while (pilot.performingTasks);
 		}
 		pilot.resumeFromStop();
 
