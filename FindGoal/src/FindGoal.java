@@ -27,8 +27,9 @@ public class FindGoal {
 	// Movement constants:
 	private static final int DRIVE_SPEED = 700; // Known Good: 700
 	private static final int DRIVE_ACCEL = 600; // Known Good: 600
-	private static final int ROTATE_SPEED = 300; // Known Good: 300
-	private static final int REVERSE_DIST = -20; // Known Good: 20
+	private static final int ESTOP_ACCEL = 1500; // Known Good: 600
+	private static final int ROTATE_SPEED = 350; // Known Good: 300
+	private static final int REVERSE_DIST = -15; // Known Good: 20
 	private static final int GRID_SIZE = 15 + CENTER_TO_SENSOR;
 	private static final int DEGREES_PER_METER = -11345; // TODO Fine tune.
 	private static final int DEGREE_PER_360 = 6070; // Determined: 6077
@@ -147,7 +148,7 @@ public class FindGoal {
 		} while (pilot.performingTasks);
 
 		// Check in a circle.
-		for (int i = 0; i < 16; i++) {
+		for (int i = 0; i < 24; i++) {
 			// Rotate 15 degrees.
 			pilot.pushTask(Task.TASK_ROTATE, 15, null);
 
@@ -323,7 +324,15 @@ public class FindGoal {
 				Thread.yield();
 
 			// Halt.
+			while (adjustingMotors.getAndSet(true)) Thread.yield();
+			motorLeft.setAcceleration(ESTOP_ACCEL);
+			motorRight.setAcceleration(ESTOP_ACCEL);
+			adjustingMotors.set(false);
 			stop();
+			while (adjustingMotors.getAndSet(true)) Thread.yield();
+			motorLeft.setAcceleration(DRIVE_ACCEL);
+			motorRight.setAcceleration(DRIVE_ACCEL);
+			adjustingMotors.set(false);
 			return getPosition();
 		}
 
