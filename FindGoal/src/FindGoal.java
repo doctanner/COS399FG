@@ -1,3 +1,9 @@
+/**
+ * James Tanner
+ * COS399: Programming Autonomous Robots
+ * 
+ * Find the Goal MKI
+ */
 import java.util.Queue;
 
 import lejos.nxt.Button;
@@ -10,30 +16,25 @@ import lejos.nxt.Sound;
 import lejos.robotics.RegulatedMotor;
 
 /**
- * James Tanner
- * COS399: Programming Autonomous Robots
+ * The FindGoal class contains all of the sub-classes for this assignment.
+ * <p>
  * 
- * Find the Goal MKI
- */
-
-/**
  * @author James Tanner
- * 
  */
 public class FindGoal {
 	// Construction Constants:
 	private static final int CENTER_TO_SENSOR = 5; // TODO DETERMINE
 
 	// Movement constants:
-	private static final int DRIVE_SPEED = 850; // Known Good: 850
-	private static final int DRIVE_ACCEL = 500; // Known Good: 500
+	private static final int DRIVE_SPEED = 800; // Known Good: 850
+	private static final int DRIVE_ACCEL = 400; // Known Good: 500
 	private static final int ESTOP_ACCEL = 1500; // Known Good: 1500
 	private static final int ROTATE_SPEED = 350; // Known Good: 350
 	private static final int REVERSE_DIST = -10; // Known Good: -10
-	private static final int GRID_SIZE = 7 + CENTER_TO_SENSOR; // Known Good: 7 +
-	private static final int SEARCH_SIZE = 20; // Known Good: 20
+	private static final int GRID_SIZE = 7 + CENTER_TO_SENSOR; // Known Good: 7
+	private static final int SEARCH_SIZE = 25; // Known Good: 20
 	private static final int DEGREES_PER_METER = -11345; // TODO Fine tune.
-	private static final int DEGREE_PER_360 = 6065; // Determined: 6077
+	private static final int DEGREE_PER_360 = 6070; // Determined: 6077
 
 	// Light Sensor Constants:
 	private static final SensorPort SENSE_PORT = SensorPort.S3;
@@ -43,7 +44,7 @@ public class FindGoal {
 	// Search Constants:
 	private static final int MODE_NORMAL = 0;
 	private static final int MODE_FAR = 1;
-	private static final int MODE_CURRENT = MODE_FAR;
+	private static final int MODE_CURRENT = MODE_NORMAL;
 
 	// Objects:
 	protected static final RegulatedMotor motorLeft = Motor.B;
@@ -51,7 +52,13 @@ public class FindGoal {
 	private static final ColorSensor sense = new ColorSensor(SENSE_PORT);
 
 	/**
+	 * This sets up the necessary threads and controls execution of the main
+	 * thread.<br>
+	 * Little to no actual work is performed here. See
+	 * {@link #searchForGoal(Pilot, int)} and {@link #goHome(Pilot)} for search
+	 * algorithms or the Pilot class for movement controls.
 	 * 
+	 * @param args
 	 */
 	public static void main(String[] args) {
 		// TODO Calibrate sensor.
@@ -115,13 +122,13 @@ public class FindGoal {
 				pilot.eraseTasks();
 				pilot.resumeFromStop();
 				Thread.yield();
-				
+
 				if (!foundWall && mode == MODE_FAR) {
 					pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
 					do {
 						Thread.yield();
 					} while (pilot.performingTasks);
-					
+
 					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
 					foundWall = true;
 
@@ -130,7 +137,7 @@ public class FindGoal {
 					do {
 						Thread.yield();
 					} while (pilot.performingTasks);
-					
+
 					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
 					pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
 					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
@@ -173,7 +180,7 @@ public class FindGoal {
 
 		// Check in a circle.
 		for (int i = 0; i < 12; i++) {
-			
+
 			// Check SEACH_SIZE forward with sensor on.
 			pilot.pushTask(Task.TASK_DRIVE, SEARCH_SIZE, null);
 			do {
@@ -189,11 +196,11 @@ public class FindGoal {
 				}
 				Thread.yield();
 			} while (pilot.performingTasks);
-			
+
 			// Backup and rotate 90 degrees with sensor off.
 			pilot.pushTask(Task.TASK_DRIVE, -SEARCH_SIZE, null);
 			pilot.pushTask(Task.TASK_ROTATE, 30, null);
-			do{
+			do {
 				Thread.yield();
 			} while (pilot.performingTasks);
 		}
