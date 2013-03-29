@@ -269,10 +269,14 @@ public class FindGoal {
 
 		Queue<Task> taskQueue = new Queue<Task>();
 
+		
 		private Position updateWaypoint(Position posPreTurn,
 				int headingPreTurn, int angleRotated) {
-			// TODO: ASSERT stopped
-
+			
+			// Block while calculations are running.
+			while (calculatingPos.getAndSet(true))
+				Thread.yield();
+			
 			// Calculate center position.
 			double radHeading = Math.toRadians(headingPreTurn);
 			int centerx = posPreTurn.x
@@ -296,18 +300,17 @@ public class FindGoal {
 			currHeading = newHeading;
 
 			// Reset tachos
+			while (adjustingMotors.getAndSet(true))
+				Thread.yield();
 			motorLeft.resetTachoCount();
 			motorRight.resetTachoCount();
-
+			
 			// Release locks.
+			adjustingMotors.set(false);
 			accessingWP.set(false);
+			calculatingPos.set(false);
 
 			return lastWP;
-		}
-
-		private int calcAngleRotated(int deltaLeft, int deltaRight) {
-			// TODO calculate the angle rotated.
-			return 0;
 		}
 
 		protected synchronized void pushTask(int taskID, int intVal,
