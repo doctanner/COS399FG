@@ -2,7 +2,7 @@
  * James Tanner
  * COS399: Programming Autonomous Robots
  * 
- * Find the Goal MKI
+ * Find the Goal MKII
  */
 import java.util.Queue;
 
@@ -38,6 +38,7 @@ public class FindGoal {
 
 	// Light Sensor Constants:
 	private static final SensorPort SENSE_PORT = SensorPort.S3;
+	private static final int COLOR_EDGE = ColorSensor.BLACK;
 	private static final int COLOR_GOAL = ColorSensor.GREEN;
 	private static final int COLOR_HOME = ColorSensor.BLUE;
 
@@ -117,7 +118,7 @@ public class FindGoal {
 				pilot.resumeFromStop();
 				return;
 
-			case ColorSensor.BLACK:
+			case COLOR_EDGE:
 				pilot.emergencyStop();
 				pilot.eraseTasks();
 				pilot.resumeFromStop();
@@ -166,7 +167,7 @@ public class FindGoal {
 			}
 
 			// If edge found...
-			if (colorVal == ColorSensor.BLACK) {
+			if (colorVal == COLOR_EDGE) {
 				pilot.emergencyStop();
 				pilot.eraseTasks();
 				pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
@@ -268,11 +269,139 @@ public class FindGoal {
 
 		Queue<Task> taskQueue = new Queue<Task>();
 
+		private Position updateWaypoint(Position posPreTurn,
+				int headingPreTurn, int angleRotated) {
+			// TODO: ASSERT stopped
+
+			// Calculate center position.
+			double radHeading = Math.toRadians(headingPreTurn);
+			int centerx = posPreTurn.x
+					- (int) (CENTER_TO_SENSOR * Math.cos(radHeading));
+			int centery = posPreTurn.y
+					- (int) (CENTER_TO_SENSOR * Math.sin(radHeading));
+
+			// Calculate heading.
+			int newHeading = (angleRotated + headingPreTurn) % 360;
+
+			// Calculate new sensor position.
+			int x = centerx + (int) (CENTER_TO_SENSOR * Math.cos(newHeading));
+			int y = centery + (int) (CENTER_TO_SENSOR * Math.sin(newHeading));
+
+			// Get locks on waypoint and motors.
+			while (accessingWP.getAndSet(true))
+				Thread.yield();
+
+			// Update position
+			lastWP = new Position(x, y);
+			currHeading = newHeading;
+
+			// Reset tachos
+			motorLeft.resetTachoCount();
+			motorRight.resetTachoCount();
+
+			// Release locks.
+			accessingWP.set(false);
+
+			return lastWP;
+		}
+
+		private int calcAngleRotated(int deltaLeft, int deltaRight) {
+			// TODO calculate the angle rotated.
+			return 0;
+		}
+
 		protected synchronized void pushTask(int taskID, int intVal,
 				Position posVal) {
 			// TODO Validate new task.
 			taskQueue.push(new Task(taskID, intVal, posVal));
 			performingTasks = true;
+		}
+
+		/**
+		 * TODO JavaDoc alignToEdge
+		 * <p>
+		 * <b>Note:</b> This method also calls {@link #emergencyStop()} if not
+		 * already in the emergency stopped state.<br>
+		 * <b>Warning:</b> {@link #resumeFromStop()} must NOT be called while
+		 * this method is running.
+		 * 
+		 * @param sense
+		 *            ColorSensor object to use for alignment.
+		 */
+		protected boolean alignToEdge(ColorSensor sense) {
+			// Emergency stop, if not already done.
+			if (!eStopped.get())
+				emergencyStop();
+
+			// If not starting on edge, don't attempt to align.
+			if (sense.getColor().getColor() != COLOR_EDGE)
+				return false;
+			// TODO Additional alert on alignToEdgeFail
+
+			// If heading is not multiple of 90 degrees, don't align.
+			if (currHeading % 90 != 0)
+				return false;
+			// TODO Add ability to use off-set when not at right angles.
+
+			// Report process.
+			LCD.drawString("Aligning...", 0, 4);
+
+			// Create new waypoint.
+			Position currPos = getPosition();
+			while (accessingWP.getAndSet(true))
+				Thread.yield();
+			lastWP = currPos;
+
+			// Get lock on motors.
+			while (adjustingMotors.getAndSet(true))
+				Thread.yield();
+
+			// Turn left
+			motorLeft.setSpeed(ROTATE_SPEED);
+			motorRight.setSpeed(ROTATE_SPEED);
+			motorLeft.forward();
+			motorRight.backward();
+
+			// Wait until edge lost.
+			int currColor;
+			do {
+				currColor = sense.getColor().getColor();
+			} while (currColor != COLOR_EDGE);
+
+			// Turn right
+			motorLeft.resetTachoCount();
+			motorRight.resetTachoCount();
+			motorLeft.backward();
+			motorRight.forward();
+
+			// Wait until edge found and lost.
+			boolean edgeSeen = false;
+			do {
+				currColor = sense.getColor().getColor();
+				if (currColor == COLOR_EDGE)
+					edgeSeen = true;
+			} while (currColor != COLOR_EDGE || !edgeSeen);
+
+			// Get raw angles rotated.
+			int rawLeft = motorLeft.getTachoCount();
+			int rawRight = motorRight.getTachoCount();
+
+			// Rotate to center.
+			motorLeft.rotate(0 - rawLeft / 2);
+			motorRight.rotate(0 - rawRight / 2);
+
+			// Reset speeds and tachos
+			motorLeft.setSpeed(DRIVE_SPEED);
+			motorRight.setSpeed(DRIVE_SPEED);
+			motorLeft.resetTachoCount();
+			motorRight.resetTachoCount();
+
+			// Release locks
+			accessingWP.set(false);
+			adjustingMotors.set(false);
+			LCD.clear(4);
+
+			return true;
 		}
 
 		private synchronized Task popTask() {
@@ -496,7 +625,8 @@ public class FindGoal {
 			LCD.drawString("Rotating " + angle, 0, 4);
 
 			// Update position.
-			Position currPos = getPosition();
+			Position startPos = getPosition();
+			int startHeading = currHeading;
 
 			// Turn.
 			int degreesToRotate = (angle * DEGREE_PER_360) / 360;
@@ -514,40 +644,15 @@ public class FindGoal {
 			// Wait until rotation completes.
 			waitUntilStopped(false);
 
-			// Calculate center position.
-			double radHeading = Math.toRadians(currHeading);
-			int centerx = currPos.x
-					- (int) (CENTER_TO_SENSOR * Math.cos(radHeading));
-			int centery = currPos.y
-					- (int) (CENTER_TO_SENSOR * Math.sin(radHeading));
+			// Set new waypoint following rotation.
+			updateWaypoint(startPos, startHeading, angle);
 
-			// Calculate heading.
-			int newHeading = (angle + currHeading) % 360;
-
-			// Calculate new sensor position.
-			int x = centerx + (int) (CENTER_TO_SENSOR * Math.cos(newHeading));
-			int y = centery + (int) (CENTER_TO_SENSOR * Math.sin(newHeading));
-
-			// Get locks on waypoint and motors.
-			while (accessingWP.getAndSet(true))
-				Thread.yield();
+			// Reset speeds
 			while (adjustingMotors.getAndSet(true))
 				Thread.yield();
-
-			// Update position
-			lastWP = new Position(x, y);
-			currHeading = newHeading;
-
-			// Reset tachos
-			motorLeft.resetTachoCount();
-			motorRight.resetTachoCount();
 			motorLeft.setSpeed(DRIVE_SPEED);
 			motorRight.setSpeed(DRIVE_SPEED);
 			adjustingMotors.set(false);
-
-			// Release locks.
-			adjustingMotors.set(false);
-			accessingWP.set(false);
 			LCD.clear(4);
 		}
 
