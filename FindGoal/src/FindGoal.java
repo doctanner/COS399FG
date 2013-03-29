@@ -124,26 +124,6 @@ public class FindGoal {
 				pilot.resumeFromStop();
 				Thread.yield();
 
-				if (!foundWall && mode == MODE_FAR) {
-					pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
-					do {
-						Thread.yield();
-					} while (pilot.performingTasks);
-
-					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
-					foundWall = true;
-
-				} else {
-					pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
-					do {
-						Thread.yield();
-					} while (pilot.performingTasks);
-
-					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
-					pilot.pushTask(Task.TASK_DRIVE, GRID_SIZE, null);
-					pilot.pushTask(Task.TASK_ROTATE, turnDir * 90, null);
-					turnDir *= -1;
-				}
 
 				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 				break;
