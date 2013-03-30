@@ -1,5 +1,6 @@
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Queue;
 
 import javax.bluetooth.RemoteDevice;
 
@@ -28,12 +29,83 @@ public class Comms {
 		new ConnectionListener().start();
 	}
 
+	public class Message {
+		final byte[] msg;
+
+		private Message(byte[] newMessage) {
+			msg = newMessage;
+		}
+	}
+
 	public class MsgAgent extends Thread {
-		Flag.Lock inLock = new Flag.Lock();
-		Flag.Lock outLock = new Flag.Lock();
+		Connection conn;
+		Flag.Lock queueLock = new Flag.Lock();
+		Queue<Message> msgQueue = new Queue<Message>();
 
 		private MsgAgent(Connection conn) {
+			if (conn.hasMsgAgentBoolFlag.getAndSet(true))
+				throw new RuntimeException("Message agent already attached");
+			
+			this.conn = conn;
+			this.setDaemon(true);
+		}
 
+		public Message receive() {
+			// If no messages, return null.
+			if (msgQueue.isEmpty())
+				return null;
+
+			// Otherwise, return next message.
+			queueLock.acquire();
+			Message msg = (Message) msgQueue.pop();
+			queueLock.release();
+			return msg;
+		}
+
+		public boolean send(byte[] msg) {
+			// If connection isn't open, fail.
+			if (!conn.isConnected())
+				return false;
+
+			// Get lock on the connection.
+			conn.lock.acquire();
+			// TODO Make send non-blocking!!
+
+			// Try to send message.
+			try {
+				// Write message to stream.
+				conn.outStream.writeByte(msg.length);
+				conn.outStream.write(msg);
+				conn.outStream.flush();
+
+				// Release lock and report success.
+				conn.lock.release();
+				return true;
+			}
+
+			// Failed to send message:
+			catch (IOException e) {
+				// Release lock and report fail.
+				conn.lock.release();
+				return false;
+			}
+		}
+
+		public void run() {
+			while (true) {
+				try {
+					byte msgSize = conn.inStream.readByte();
+					byte[] msgArr = new byte [msgSize];
+					conn.inStream.read(msgArr);
+					
+					queueLock.acquire();
+					msgQueue.push(new Message(msgArr));
+					queueLock.release();
+					
+				} catch (IOException e) {
+					// TODO Close message handler.
+				}
+			}
 		}
 	}
 
@@ -56,7 +128,6 @@ public class Comms {
 						byte[] nameArr = new byte[nameSize];
 						conn.inStream.read(nameArr);
 						conn.partner = String.valueOf(nameArr);
-						conn.ready.set(true);
 
 						// Add the connection to the connections list.
 						listLock.acquire();
@@ -72,12 +143,13 @@ public class Comms {
 	}
 
 	private class Connection {
-		private boolean connected;
-		private Flag.BoolFlag ready = new Flag.BoolFlag(false);
-		private BTConnection btc;
-		private String partner;
-		private DataInputStream inStream;
-		private DataOutputStream outStream;
+		boolean connected;
+		final Flag.Lock lock = new Flag.Lock();
+		final Flag.BoolFlag hasMsgAgentBoolFlag = new Flag.BoolFlag(false);
+		BTConnection btc;
+		String partner;
+		DataInputStream inStream;
+		DataOutputStream outStream;
 
 		private Connection(String target) {
 			// Attempt to connect.
@@ -99,7 +171,6 @@ public class Comms {
 
 				// Connection successful.
 				connected = true;
-				ready.set(true);
 			}
 
 			// Connection failed
