@@ -26,9 +26,9 @@ public class FindGoal {
 	private static final int CENTER_TO_SENSOR = 5; // TODO DETERMINE
 
 	// Movement constants:
-	private static final int DRIVE_SPEED = 800; // Known Good: 850
-	private static final int DRIVE_ACCEL = 400; // Known Good: 500
-	private static final int ESTOP_ACCEL = 1500; // Known Good: 1500
+	private static final int DRIVE_SPEED = 600; // Known Good: 850
+	private static final int DRIVE_ACCEL = 500; // Known Good: 500
+	private static final int ESTOP_ACCEL = 2700; // Known Good: 1500
 	private static final int ROTATE_SPEED = 350; // Known Good: 350
 	private static final int REVERSE_DIST = -10; // Known Good: -10
 	private static final int GRID_SIZE = 7 + CENTER_TO_SENSOR; // Known Good: 7
@@ -38,6 +38,7 @@ public class FindGoal {
 
 	// Light Sensor Constants:
 	private static final SensorPort SENSE_PORT = SensorPort.S3;
+	private static final int COLOR_BOARD = ColorSensor.WHITE;
 	private static final int COLOR_EDGE = ColorSensor.BLACK;
 	private static final int COLOR_GOAL = ColorSensor.GREEN;
 	private static final int COLOR_HOME = ColorSensor.BLUE;
@@ -112,19 +113,31 @@ public class FindGoal {
 			Color currColor = sense.getColor();
 			switch (currColor.getColor()) {
 
-			case COLOR_GOAL:
-				pilot.emergencyStop();
-				pilot.eraseTasks();
-				pilot.resumeFromStop();
-				return;
+			// case COLOR_GOAL:
+			// pilot.emergencyStop();
+			// pilot.eraseTasks();
+			// pilot.resumeFromStop();
+			// return;
 
 			case COLOR_EDGE:
 				pilot.emergencyStop();
 				pilot.eraseTasks();
+
+				if (!pilot.alignToEdge(sense))
+					Sound.beepSequence();
+				else
+					Sound.beepSequenceUp();
+
+				// TEMP: Turn around
+				pilot.pushTask(Task.TASK_DRIVE, -GRID_SIZE, null);
+				pilot.pushTask(Task.TASK_ROTATE, 180, null);
 				pilot.resumeFromStop();
-				Thread.yield();
 
+				do {
+					Thread.yield();
+				} while (pilot.performingTasks);
 
+				// TODO Continue search
 				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 				break;
 			}
@@ -249,14 +262,13 @@ public class FindGoal {
 
 		Queue<Task> taskQueue = new Queue<Task>();
 
-		
 		private Position updateWaypoint(Position posPreTurn,
 				int headingPreTurn, int angleRotated) {
-			
+
 			// Block while calculations are running.
 			while (calculatingPos.getAndSet(true))
 				Thread.yield();
-			
+
 			// Calculate center position.
 			double radHeading = Math.toRadians(headingPreTurn);
 			int centerx = posPreTurn.x
@@ -284,7 +296,7 @@ public class FindGoal {
 				Thread.yield();
 			motorLeft.resetTachoCount();
 			motorRight.resetTachoCount();
-			
+
 			// Release locks.
 			adjustingMotors.set(false);
 			accessingWP.set(false);
@@ -312,14 +324,15 @@ public class FindGoal {
 		 *            ColorSensor object to use for alignment.
 		 */
 		protected boolean alignToEdge(ColorSensor sense) {
+
+			// Report process.
+			LCD.drawString("Aligning...", 0, 4);
+
 			// Emergency stop, if not already done.
 			if (!eStopped.get())
 				emergencyStop();
 
-			// If not starting on edge, don't attempt to align.
-			if (sense.getColor().getColor() != COLOR_EDGE)
-				return false;
-			// TODO Additional alert on alignToEdgeFail
+			Sound.beep();
 
 			// If heading is not multiple of 90 degrees, don't align.
 			if (currHeading % 90 != 0)
@@ -349,7 +362,12 @@ public class FindGoal {
 			int currColor;
 			do {
 				currColor = sense.getColor().getColor();
-			} while (currColor != COLOR_EDGE);
+			} while (currColor != COLOR_BOARD);
+
+			// Stop
+			motorLeft.stop(true);
+			motorRight.stop(true);
+			waitUntilStopped(false);
 
 			// Turn right
 			motorLeft.resetTachoCount();
@@ -363,15 +381,44 @@ public class FindGoal {
 				currColor = sense.getColor().getColor();
 				if (currColor == COLOR_EDGE)
 					edgeSeen = true;
-			} while (currColor != COLOR_EDGE || !edgeSeen);
+			} while (currColor != COLOR_BOARD || !edgeSeen);
+
+			// Stop
+			motorLeft.stop(true);
+			motorRight.stop(true);
+			waitUntilStopped(false);
 
 			// Get raw angles rotated.
-			int rawLeft = motorLeft.getTachoCount();
+			int rawLeft = 0 - motorLeft.getTachoCount();
 			int rawRight = motorRight.getTachoCount();
+			
+			// Turn left
+			motorLeft.resetTachoCount();
+			motorRight.resetTachoCount();
+			motorLeft.forward();
+			motorRight.backward();
+
+			// Wait until edge found and lost.
+			edgeSeen = false;
+			do {
+				currColor = sense.getColor().getColor();
+				if (currColor == COLOR_EDGE)
+					edgeSeen = true;
+			} while (currColor != COLOR_BOARD || !edgeSeen);
+
+			// Stop
+			motorLeft.stop(true);
+			motorRight.stop(true);
+			waitUntilStopped(false);
+
+			// Get raw angles rotated.
+			rawLeft += motorLeft.getTachoCount();
+			rawRight += 0 - motorRight.getTachoCount();
 
 			// Rotate to center.
-			motorLeft.rotate(0 - rawLeft / 2);
-			motorRight.rotate(0 - rawRight / 2);
+			motorLeft.rotate(0 - rawLeft/4, true);
+			motorRight.rotate(rawRight/4, true);
+			waitUntilStopped(false);
 
 			// Reset speeds and tachos
 			motorLeft.setSpeed(DRIVE_SPEED);
