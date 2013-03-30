@@ -103,6 +103,13 @@ public class FindGoal {
 		Button.ESCAPE.waitForPressAndRelease();
 	}
 
+	private static boolean connectToTurret(){
+		// Attempt to connect to turret.
+		
+		
+		return true;
+	}
+	
 	private static void searchForGoal(Pilot pilot, int mode) {
 
 		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
@@ -332,104 +339,10 @@ public class FindGoal {
 			if (!eStopped.get())
 				emergencyStop();
 
-			Sound.beep();
-
-			// If heading is not multiple of 90 degrees, don't align.
-			if (currHeading % 90 != 0)
-				return false;
-			// TODO Add ability to use off-set when not at right angles.
-
-			// Report process.
-			LCD.drawString("Aligning...", 0, 4);
-
-			// Create new waypoint.
-			Position currPos = getPosition();
-			while (accessingWP.getAndSet(true))
-				Thread.yield();
-			lastWP = currPos;
-
-			// Get lock on motors.
-			while (adjustingMotors.getAndSet(true))
-				Thread.yield();
-
-			// Turn left
-			motorLeft.setSpeed(ROTATE_SPEED);
-			motorRight.setSpeed(ROTATE_SPEED);
-			motorLeft.forward();
-			motorRight.backward();
-
-			// Wait until edge lost.
-			int currColor;
-			do {
-				currColor = sense.getColor().getColor();
-			} while (currColor != COLOR_BOARD);
-
-			// Stop
-			motorLeft.stop(true);
-			motorRight.stop(true);
-			waitUntilStopped(false);
-
-			// Turn right
-			motorLeft.resetTachoCount();
-			motorRight.resetTachoCount();
-			motorLeft.backward();
-			motorRight.forward();
-
-			// Wait until edge found and lost.
-			boolean edgeSeen = false;
-			do {
-				currColor = sense.getColor().getColor();
-				if (currColor == COLOR_EDGE)
-					edgeSeen = true;
-			} while (currColor != COLOR_BOARD || !edgeSeen);
-
-			// Stop
-			motorLeft.stop(true);
-			motorRight.stop(true);
-			waitUntilStopped(false);
-
-			// Get raw angles rotated.
-			int rawLeft = 0 - motorLeft.getTachoCount();
-			int rawRight = motorRight.getTachoCount();
+			// TODO Add alignment system.
 			
-			// Turn left
-			motorLeft.resetTachoCount();
-			motorRight.resetTachoCount();
-			motorLeft.forward();
-			motorRight.backward();
-
-			// Wait until edge found and lost.
-			edgeSeen = false;
-			do {
-				currColor = sense.getColor().getColor();
-				if (currColor == COLOR_EDGE)
-					edgeSeen = true;
-			} while (currColor != COLOR_BOARD || !edgeSeen);
-
-			// Stop
-			motorLeft.stop(true);
-			motorRight.stop(true);
-			waitUntilStopped(false);
-
-			// Get raw angles rotated.
-			rawLeft += motorLeft.getTachoCount();
-			rawRight += 0 - motorRight.getTachoCount();
-
-			// Rotate to center.
-			motorLeft.rotate(0 - rawLeft/4, true);
-			motorRight.rotate(rawRight/4, true);
-			waitUntilStopped(false);
-
-			// Reset speeds and tachos
-			motorLeft.setSpeed(DRIVE_SPEED);
-			motorRight.setSpeed(DRIVE_SPEED);
-			motorLeft.resetTachoCount();
-			motorRight.resetTachoCount();
-
-			// Release locks
-			accessingWP.set(false);
-			adjustingMotors.set(false);
 			LCD.clear(4);
+			resumeFromStop();
 
 			return true;
 		}

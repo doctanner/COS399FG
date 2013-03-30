@@ -25,5 +25,20 @@ public class Flag {
 			return oldValue;
 		}
 	}
+	
+	public static class Lock {
+		boolean locked = false;
+		
+		public synchronized void acquire(){
+			while (locked)
+				Thread.yield();
+			
+			locked = true;
+		}
+		
+		public synchronized void release(){
+			locked = false;
+		}
+	}
 
 }
