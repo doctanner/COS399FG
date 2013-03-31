@@ -1,3 +1,5 @@
+import lejos.nxt.LCD;
+
 /**
  * James Tanner <br>
  * COS 399 - Programming Autonomous Robots <p>
@@ -23,6 +25,14 @@ public class Turret {
 		// Connect to base.
 		base = comms.getConnection(baseName, true);
 		
+		while (base.isConnected()){
+			Comms.Message msg;
+			msg = base.receive();
+			if (msg != null){
+				LCD.clear();
+				LCD.drawString(msg.readAsString(), 0, 0);
+			}
+		}
 	}
 
 	

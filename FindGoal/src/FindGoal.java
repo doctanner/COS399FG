@@ -53,6 +53,12 @@ public class FindGoal {
 	protected static final RegulatedMotor motorRight = Motor.C;
 	private static final ColorSensor sense = new ColorSensor(SENSE_PORT);
 
+	// Communications:
+	static Comms comms = new Comms();
+	static Comms.Connection turret;
+	static String turretName = "Alien";
+	static boolean hasTurret;
+
 	/**
 	 * This sets up the necessary threads and controls execution of the main
 	 * thread.<br>
@@ -70,13 +76,25 @@ public class FindGoal {
 		pilot.setDaemon(true);
 		pilot.start();
 
+		// Wait for connection from turret.
+		hasTurret = connectToTurret();
+		
+		Comms.Message msg = new Comms.Message("Made connection!");
+		turret.send(msg);
+
 		// Wait to start.
 		Button.ENTER.waitForPressAndRelease();
+		
+		msg = new Comms.Message("Searching...");
+		turret.send(msg);
+
 
 		// Find the goal.
 		searchForGoal(pilot, MODE_CURRENT);
 
 		// Sound victory.
+		msg = new Comms.Message("Found goal!");
+		turret.send(msg);
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
@@ -94,22 +112,30 @@ public class FindGoal {
 
 			LCD.clear(0);
 			LCD.drawString("FOUND GOAL!", 0, 0);
+			msg = new Comms.Message("Found home!");
+			turret.send(msg);
 		} else {
 			LCD.clear(0);
 			LCD.drawString("Failed. :(", 0, 0);
+			msg = new Comms.Message("So sad.");
+			turret.send(msg);
 		}
 
 		// Wait for permission to stop.
 		Button.ESCAPE.waitForPressAndRelease();
+		
+		turret.close();
 	}
 
-	private static boolean connectToTurret(){
+	private static boolean connectToTurret() {
 		// Attempt to connect to turret.
-		
-		
-		return true;
+		do {
+			turret = comms.getConnection(turretName, false);
+		} while (turret == null && Button.ESCAPE.isUp());
+
+		return turret == null ? false : turret.isConnected();
 	}
-	
+
 	private static void searchForGoal(Pilot pilot, int mode) {
 
 		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
@@ -226,7 +252,6 @@ public class FindGoal {
 
 	}
 
-
 	private static class Task {
 		protected static final int TASK_GOTO = 0;
 		protected static final int TASK_STOP = 1;
@@ -328,7 +353,7 @@ public class FindGoal {
 				emergencyStop();
 
 			// TODO Add alignment system.
-			
+
 			LCD.clear(4);
 			resumeFromStop();
 

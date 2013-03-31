@@ -37,7 +37,7 @@ public class Comms {
 
 		// Search for existing connection that matches.
 		for (Connection conn : connList) {
-			if (conn.partner.equals(partner)) {
+			if (conn.partner.equalsIgnoreCase(partner)) {
 				result = conn;
 				break;
 			}
@@ -67,7 +67,7 @@ public class Comms {
 		return result;
 	}
 
-	public class Message {
+	public static class Message {
 		static final byte TYPE_HANDSHAKE = -128;
 		static final byte TYPE_BYTES = -127;
 		static final byte TYPE_STRING = -126;
@@ -197,6 +197,9 @@ public class Comms {
 						connListLock.acquire();
 						connList.add(conn);
 						connListLock.release();
+						
+						// Start receiving on connection.
+						conn.start();
 
 					} catch (IOException e) {
 						conn.close();
@@ -262,6 +265,7 @@ public class Comms {
 			// Failed to send message:
 			catch (IOException e) {
 				success = false;
+				// TODO Handle send failure.
 			}
 
 			outLock.release();
@@ -304,6 +308,18 @@ public class Comms {
 			return connected;
 		}
 
+		public void close() {
+			this.interrupt();
+			connected = false;
+			btc.close();
+			inStream = null;
+			outStream = null;
+			btc = null;
+			connListLock.acquire();
+			connList.remove(this);
+			connListLock.release();
+		}
+
 		private boolean connect() {
 			// Get RemoteObject, if paired.
 			RemoteDevice btrd = Bluetooth.getKnownDevice(partner);
@@ -332,15 +348,6 @@ public class Comms {
 			// Connection established. Listen.
 			this.start();
 			return true;
-		}
-
-		private void close() {
-			this.interrupt();
-			connected = false;
-			btc.close();
-			inStream = null;
-			outStream = null;
-			btc = null;
 		}
 
 		private void openStreams() {
