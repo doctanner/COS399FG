@@ -10,13 +10,19 @@
  * 
  */
 public class Turret {
+	
+	// Communications:
+	static Comms comms = new Comms();
+	static Comms.Connection base;
+	static String baseName = "Predator";
 
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		// TODO Attempt to connect to base.
-
+		// Connect to base.
+		base = comms.getConnection(baseName, true);
+		
 	}
 
 	

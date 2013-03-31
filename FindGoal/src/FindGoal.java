@@ -226,18 +226,6 @@ public class FindGoal {
 
 	}
 
-	private static class Position {
-		/** X-coordinate. */
-		final int x;
-
-		/** y-coordinate. */
-		final int y;
-
-		Position(int x, int y) {
-			this.x = x;
-			this.y = y;
-		}
-	}
 
 	private static class Task {
 		protected static final int TASK_GOTO = 0;
