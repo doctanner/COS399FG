@@ -21,7 +21,7 @@ import lejos.robotics.RegulatedMotor;
  * 
  * @author James Tanner
  */
-public class FindGoal {
+public class Base {
 	// Construction Constants:
 	private static final int CENTER_TO_SENSOR = 5; // TODO DETERMINE
 
@@ -45,16 +45,11 @@ public class FindGoal {
 	private static final int COLOR_GOAL = ColorSensor.GREEN;
 	private static final int COLOR_HOME = ColorSensor.BLUE;
 
-	// Search Constants:
-	private static final int MODE_NORMAL = 0;
-	@SuppressWarnings("unused")
-	private static final int MODE_FAR = 1;
-	private static final int MODE_CURRENT = MODE_NORMAL;
-
 	// Objects:
 	protected static final RegulatedMotor motorLeft = Motor.B;
 	protected static final RegulatedMotor motorRight = Motor.C;
 	private static final ColorSensor sense = new ColorSensor(SENSE_PORT);
+	private static Pilot pilot;
 
 	// Communications:
 	static Comms comms;
@@ -77,7 +72,7 @@ public class FindGoal {
 		//Comms.openDebugging();
 
 		// Start pilot.
-		Pilot pilot = new Pilot();
+		pilot = new Pilot();
 		pilot.setDaemon(true);
 		pilot.start();
 
@@ -88,33 +83,37 @@ public class FindGoal {
 		LCD.drawString("Waiting....", 0, 0);
 		hasTurret = connectToTurret();
 
-		LCD.drawString("Turret Found!", 0, 0);
+		LCD.drawString("Turret Connected.", 0, 0);
 
-		comms.send(new Comms.Message(new Comms.Command(Comms.Command.CMD_ROTATE, Comms.intToBytes(180))));
-
+		// Wait to start.
 		LCD.clear(4);
 		LCD.drawString("Start?", 0, 4);
 		Button.ENTER.waitForPressAndRelease();
+		LCD.clear(4);
 
-		// Wait to start.
-		Button.ENTER.waitForPressAndRelease();
-		LCD.clear(0);
-
-		Comms.Message msg = new Comms.Message("Searching...");
-		comms.send(msg);
+		comms.send(new Comms.Message("Searching..."));
+		
+		pilot.pushTask(Task.TASK_DRIVE, 0, null);
+		while (Button.ESCAPE.isUp()){
+			// Get commands.
+			Comms.Message msg = comms.receive();
+			if (msg != null && msg.type == Comms.Message.TYPE_COMMAND)
+				handleCommand(msg.readAsCommand());
+			
+			Thread.yield();
+		}
+		
 
 		// Find the goal.
-		searchForGoal(pilot, MODE_CURRENT);
+		searchForGoal();
 
 		// Sound victory.
-		msg = new Comms.Message("Found goal!");
-		comms.send(msg);
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
 
 		// Find home.
-		boolean foundHome = goHome(pilot);
+		boolean foundHome = goHome();
 
 		// Sound victory.
 		pilot.getPosition();
@@ -126,13 +125,11 @@ public class FindGoal {
 
 			LCD.clear(0);
 			LCD.drawString("FOUND GOAL!", 0, 0);
-			msg = new Comms.Message("Found home!");
-			comms.send(msg);
+
 		} else {
 			LCD.clear(0);
 			LCD.drawString("Failed. :(", 0, 0);
-			msg = new Comms.Message("So sad.");
-			comms.send(msg);
+
 		}
 
 		// Wait for permission to stop.
@@ -147,7 +144,22 @@ public class FindGoal {
 		return comms.listen();
 	}
 
-	private static void searchForGoal(Pilot pilot, int mode) {
+	private static void handleCommand(Comms.Command command) {
+		switch (command.type) {
+		case Comms.Command.CMD_TERM:
+			System.exit(1);
+		case Comms.Command.CMD_HALT:
+			pilot.emergencyStop();
+			comms.send(new Comms.Message("Emergency stop!"));
+			Button.ENTER.waitForPressAndRelease();
+			pilot.pushTask(Task.TASK_DRIVE, 0, null);
+			comms.send(new Comms.Message("Okay"));
+			pilot.resumeFromStop();
+		}
+
+	}
+
+	private static void searchForGoal() {
 
 		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 		@SuppressWarnings("unused")
@@ -190,7 +202,7 @@ public class FindGoal {
 		}
 	}
 
-	private static boolean goHome(Pilot pilot) {
+	private static boolean goHome() {
 		pilot.pushTask(Task.TASK_GOTO, 0, new Position(0, 0));
 		int colorVal;
 
