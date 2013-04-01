@@ -87,16 +87,26 @@ public class Base {
 
 		// Wait to start.
 		LCD.clear(4);
-		LCD.drawString("Start?", 0, 4);
-		Button.ENTER.waitForPressAndRelease();
+		LCD.drawString("Waiting...", 0, 4);
+		Comms.Message msg;
+		boolean waiting = true;
+		do{
+			msg = comms.receive();
+			if (msg != null && msg.type == Comms.Message.TYPE_COMMAND){
+				Comms.Command command = msg.readAsCommand();
+				waiting = command.type != Comms.Command.CMD_START;
+			}
+				
+		} while (waiting);
 		LCD.clear(4);
 
 		comms.send(new Comms.Message("Searching..."));
-		
-		pilot.pushTask(Task.TASK_DRIVE, 0, null);
+		sendStart();
+
+		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 		while (Button.ESCAPE.isUp()){
 			// Get commands.
-			Comms.Message msg = comms.receive();
+			msg = comms.receive();
 			if (msg != null && msg.type == Comms.Message.TYPE_COMMAND)
 				handleCommand(msg.readAsCommand());
 			
@@ -152,11 +162,22 @@ public class Base {
 			pilot.emergencyStop();
 			comms.send(new Comms.Message("Emergency stop!"));
 			Button.ENTER.waitForPressAndRelease();
-			pilot.pushTask(Task.TASK_DRIVE, 0, null);
+			pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 			comms.send(new Comms.Message("Okay"));
+			sendStart();
 			pilot.resumeFromStop();
 		}
 
+	}
+
+	private static void sendHalt() {
+		comms.send(new Comms.Message(new Comms.Command(Comms.Command.CMD_HALT,
+				new byte[0])));
+	}
+
+	private static void sendStart() {
+		comms.send(new Comms.Message(new Comms.Command(Comms.Command.CMD_START,
+				new byte[0])));
 	}
 
 	private static void searchForGoal() {

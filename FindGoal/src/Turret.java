@@ -35,8 +35,11 @@ public class Turret {
 			SONAR_PORT);
 
 	// Communications:
-	static Comms comms = new Comms();
-	static String baseName = "Predator";
+	private static Comms comms = new Comms();
+	private static String baseName = "Predator";
+
+	// State:
+	private static boolean alert = false;
 
 	/**
 	 * @param args
@@ -66,6 +69,12 @@ public class Turret {
 			LCD.drawString("Connected!", 0, 0);
 		}
 
+		LCD.clear(4);
+		LCD.drawString("Ready?", 0, 4);
+		Button.ENTER.waitForPressAndRelease();
+		LCD.clear(4);
+		sendStart();
+
 		while (Button.ESCAPE.isUp()) {
 			// Get the next message, if there is one.
 			Comms.Message msg = comms.receive();
@@ -85,14 +94,25 @@ public class Turret {
 
 			// Get the current distance.
 			int dist = sonar.getDistance();
-			if (dist < ALERT_THRESH) {
-				comms.send(new Comms.Message(new Comms.Command(
-						Comms.Command.CMD_HALT, new byte[0])));
+			if (dist < ALERT_THRESH && alert) {
+					sendHalt();
+					alert = false;
 			}
+
 			LCD.clear(3);
 			LCD.drawString("Dist: " + dist + "cm", 0, 3);
 
 		}
+	}
+
+	private static void sendHalt() {
+		comms.send(new Comms.Message(new Comms.Command(Comms.Command.CMD_HALT,
+				new byte[0])));
+	}
+
+	private static void sendStart() {
+		comms.send(new Comms.Message(new Comms.Command(Comms.Command.CMD_START,
+				new byte[0])));
 	}
 
 	private static void handleCommand(Comms.Command command) {
@@ -101,6 +121,13 @@ public class Turret {
 			System.exit(1);
 		case Comms.Command.CMD_ROTATE:
 			rotateTo(Comms.bytesToInt(command.value));
+			break;
+		case Comms.Command.CMD_START:
+			alert = true;
+			break;
+		case Comms.Command.CMD_HALT:
+			alert = false;
+			break;
 		}
 
 	}

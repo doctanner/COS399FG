@@ -160,7 +160,9 @@ public class Comms {
 
 		public final static byte CMD_TERM = -128;
 		public final static byte CMD_HALT = -127;
-		public final static byte CMD_ROTATE = -126;
+		public final static byte CMD_START = -126;
+		public final static byte CMD_ROTATE = -125;
+		public final static byte CMD_MODE = -124;
 
 		public final byte type;
 		public final byte[] value;
