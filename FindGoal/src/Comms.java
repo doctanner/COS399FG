@@ -20,8 +20,18 @@ import lejos.nxt.comm.*;
  */
 public class Comms {
 
-	private Flag.Lock connListLock = new Flag.Lock();
-	private ArrayList<Connection> connList = new ArrayList<Connection>();
+	// Connection objects:
+	boolean connected;
+	BTConnection btc;
+	String partner;
+
+	// In-stream objects:
+	Flag.Lock queueLock = new Flag.Lock();
+	Queue<Message> msgQueue = new Queue<Message>();
+
+	// Message handlers:
+	inboundHandler in;
+	outboundHandler out;
 
 	/**
 	 * 
@@ -29,9 +39,6 @@ public class Comms {
 	public Comms() {
 		LCD.clear(1);
 		LCD.drawString("Comms: OFFLINE", 0, 1);
-
-		// Activate ConnectionListener
-		new ConnectionListener().start();
 	}
 
 	public static void openDebugging() {
@@ -43,50 +50,6 @@ public class Comms {
 	private void debugMsg(String msg) {
 		if (RConsole.isOpen())
 			RConsole.println(msg);
-	}
-
-	public Connection getConnection(String partner, boolean create) {
-		// Search list for that connection.
-		connListLock.acquire();
-		Connection result = null;
-
-		// Search for existing connection that matches.
-		for (Connection conn : connList) {
-			if (conn.partner.equalsIgnoreCase(partner)) {
-				result = conn;
-				break;
-			}
-		}
-
-		// Release lock.
-		connListLock.release();
-
-		// Make a new connection if necessary.
-		if (result == null && create) {
-			// Make new connection.
-			debugMsg("Creating new connection to " + partner);
-			result = new Connection(partner);
-
-			// Add it to the list, if it connected.
-			if (result.isConnected()) {
-				debugMsg("Connection made. Adding to list.");
-				// Add this to list.
-				connListLock.acquire();
-				connList.add(result);
-				connListLock.release();
-			}
-
-			else {
-				debugMsg("Connection failed.");
-				LCD.clear(1);
-				LCD.clear(2);
-				LCD.drawString("Comms: ERR", 0, 1);
-				LCD.drawString("Connection Failed.", 0, 2);
-			}
-		}
-
-		// Return whatever connection was found or created.
-		return result;
 	}
 
 	public static class Message {
@@ -209,213 +172,146 @@ public class Comms {
 
 	}
 
-	private class ConnectionListener extends Thread {
-		public void run() {
-			// Run as Daemon.
-			this.setDaemon(true);
-
-			LCD.clear(1);
-			LCD.drawString("Comms: Online", 0, 1);
-
-			// Listen for new connections forever.
-			while (true) {
-				// Wait for a connection
-				debugMsg("\nWaiting for connection...");
-				BTConnection btc = Bluetooth.waitForConnection(0,
-						NXTConnection.PACKET);
-				if (btc == null)
-					continue;
-				debugMsg("\nInbound connection...");
-				LCD.clear(1);
-				LCD.clear(2);
-				LCD.drawString("Comms: Connect", 0, 1);
-				LCD.drawString("Inbound", 0, 2);
-
-				int size;
-				do {
-					Thread.yield();
-					size = btc.available(2);
-				} while (size < 1);
-
-				debugMsg("Getting Message...");
-				byte[] envelope = new byte[size];
-				int read = btc.read(envelope, size);
-
-				if (read < 0) {
-					debugMsg("Read Error: " + read);
-					LCD.clear(1);
-					LCD.clear(2);
-					LCD.drawString("Comms: ERR", 0, 1);
-					LCD.drawString("ERR: Read Error", 0, 2);
-					continue;
-				}
-
-				debugMsg("Message recieved. Unpacking...");
-				Message msg = Message.unpack(envelope);
-
-				if (msg.type == Message.TYPE_HANDSHAKE) {
-					debugMsg("Message was handshake.");
-					String partner = msg.readAsString();
-					debugMsg("Creating connection with " + partner);
-					new Connection(btc, partner);
-				} else {
-					debugMsg("Message was not handshake. Aborting.");
-					LCD.clear(1);
-					LCD.clear(2);
-					LCD.drawString("Comms: ERR", 0, 1);
-					LCD.drawString("ERR: Bad Handshake", 0, 2);
-				}
-
-				LCD.clear(1);
-				LCD.clear(2);
-				LCD.drawString("Comms: Online", 0, 1);
-			}
-		}
+	private void startHandlers() {
+		in = new inboundHandler();
+		out = new outboundHandler();
+		in.start();
+		out.start();
 	}
 
-	public class Connection {
-		// Connection objects:
-		boolean connected;
-		BTConnection btc;
-		String partner;
+	public boolean send(Message packet) {
+		if (out == null)
+			return false;
+		out.pushMessage(packet);
+		return true;
+	}
 
-		// In-stream objects:
-		Flag.Lock queueLock = new Flag.Lock();
-		Queue<Message> msgQueue = new Queue<Message>();
+	public Message receive() {
+		if (in == null)
+			return null;
+		return in.popMessage();
+	}
 
-		// Message handlers:
-		inboundHandler in;
-		outboundHandler out;
+	public boolean isConnected() {
+		if (btc == null)
+			return false;
+		return connected;
+	}
 
-		private Connection(String target) {
-			// Attempt to connect.
-			connected = connect();
-			if (connected)
-				startHandlers();
+	public void close() {
+		connected = false;
+		if (in != null) {
+			in.interrupt();
+			in = null;
+		}
+		if (out != null) {
+			out.interrupt();
+			out = null;
+		}
+		btc.close();
+		btc = null;
+	}
+
+	public boolean connect() {
+		// TODO Fix to work by pre-coded name.
+		RemoteDevice btrd = selectPartner();
+
+		LCD.clear(1);
+		LCD.clear(2);
+		LCD.drawString("Comms: Connect", 0, 1);
+		LCD.drawString("Outbound.", 0, 2);
+
+		// Get friendly name of partner.
+		partner = btrd.getFriendlyName(false);
+		debugMsg("Actually connecting to " + partner);
+
+		// Attempt to connect to RemoteObject
+		btc = Bluetooth.connect(partner, NXTConnection.PACKET);
+		if (btc == null) {
+			debugMsg("Could not connect to device");
+			LCD.clear(1);
+			LCD.clear(2);
+			LCD.drawString("Comms: ERR", 0, 1);
+			LCD.drawString("No Connection", 0, 2);
+			Button.waitForAnyPress();
+			return false;
 		}
 
-		private Connection(BTConnection btcIn, String source) {
-			// Create connection from incoming request.
-			if (btcIn != null) {
-				btc = btcIn;
-				partner = source;
-				connected = true;
-				startHandlers();
-				connListLock.acquire();
-				connList.add(this);
-				connListLock.release();
-			}
+		debugMsg("Generating Handshake...");
+		byte[] fname = Bluetooth.getFriendlyName().getBytes();
+		int size = fname.length;
+		byte[] envelope = new byte[size + 1];
+		envelope[0] = Message.TYPE_HANDSHAKE;
+		System.arraycopy(fname, 0, envelope, 1, size);
+
+		debugMsg("Sending Handshake...");
+		int wrote = btc.write(envelope, size + 1);
+
+		if (wrote < 0) {
+			debugMsg("Handshake Failed: " + wrote);
+			LCD.clear(1);
+			LCD.clear(2);
+			LCD.drawString("Comms: ERR", 0, 1);
+			LCD.drawString("Handshake Fail", 0, 2);
+			return false;
 		}
 
-		private void startHandlers() {
-			in = new inboundHandler(this);
-			out = new outboundHandler(this);
-			in.start();
-			out.start();
+		// Return
+		LCD.clear(1);
+		LCD.clear(2);
+		LCD.drawString("Comms: Online", 0, 1);
+		debugMsg("Connected!");
+		connected = true;
+		startHandlers();
+
+		// TODO REMOVE
+		// Send test message.
+		debugMsg("Sending test message...");
+		Message msg = new Message("Test message");
+		send(msg);
+		
+		return true;
+	}
+	
+	public boolean listen(){
+		if (isConnected()) return false;
+		
+		debugMsg("Listening for connection...");
+		btc = Bluetooth.waitForConnection();
+		if (btc == null) return false;
+
+		debugMsg("Found connection...");
+		int size = btc.available();
+		while (size < 1){
+			Thread.yield();
+			size = btc.available();
 		}
 
-		public boolean send(Message packet) {
-			if (out == null)
-				return false;
-			out.pushMessage(packet);
-			return true;
-		}
-
-		public Message receive() {
-			if (in == null)
-				return null;
-			return in.popMessage();
-		}
-
-		public boolean isConnected() {
-			if (btc == null)
-				return false;
-			return connected;
-		}
-
-		public void close() {
-			connListLock.acquire();
-			connList.remove(this);
-			connListLock.release();
-			connected = false;
-			if (in != null) {
-				in.interrupt();
-				in = null;
-			}
-			if (out != null) {
-				out.interrupt();
-				out = null;
-			}
+		debugMsg("Recieved message...");
+		byte[] envelope = new byte[size];
+		btc.read(envelope, size);
+		Message msg = Message.unpack(envelope);
+		
+		if (msg.type != Message.TYPE_HANDSHAKE){
+			debugMsg("Message wasn't handshake.");
 			btc.close();
 			btc = null;
+			return false;
 		}
-
-		private boolean connect() {
-			// TODO Fix to work by pre-coded name.
-			RemoteDevice btrd = selectPartner();
-
-			LCD.clear(1);
-			LCD.clear(2);
-			LCD.drawString("Comms: Connect", 0, 1);
-			LCD.drawString("Outbound.", 0, 2);
-
-			// Get friendly name of partner.
-			partner = btrd.getFriendlyName(false);
-			debugMsg("Actually connecting to " + partner);
-
-			// Attempt to connect to RemoteObject
-			btc = Bluetooth.connect(partner, NXTConnection.PACKET);
-			if (btc == null) {
-				debugMsg("Could not connect to device");
-				LCD.clear(1);
-				LCD.clear(2);
-				LCD.drawString("Comms: ERR", 0, 1);
-				LCD.drawString("No Connection", 0, 2);
-				Button.waitForAnyPress();
-				return false;
-			}
-
-			debugMsg("Generating Handshake...");
-			byte[] fname = Bluetooth.getFriendlyName().getBytes();
-			int size = fname.length;
-			byte[] envelope = new byte[size + 1];
-			envelope[0] = Message.TYPE_HANDSHAKE;
-			System.arraycopy(fname, 0, envelope, 1, size);
-
-			debugMsg("Sending Handshake...");
-			int wrote = btc.write(envelope, size + 1);
-
-			if (wrote < 0) {
-				debugMsg("Handshake Failed: " + wrote);
-				LCD.clear(1);
-				LCD.clear(2);
-				LCD.drawString("Comms: ERR", 0, 1);
-				LCD.drawString("Handshake Fail", 0, 2);
-				return false;
-			}
-
-			// TODO REMOVE
-			// Send test message.
-			debugMsg("Sending test message...");
-			Message msg = new Message("Test message");
-			send(msg);
-
-			// Return
-			LCD.clear(1);
-			LCD.clear(2);
-			LCD.drawString("Comms: Online", 0, 1);
-			return true;
-		}
+		
+		debugMsg("Handshake accepted.");
+		partner = msg.readAsString();
+		debugMsg("Connected to " + partner);
+		startHandlers();
+		connected = true;
+		LCD.clear(1);
+		LCD.drawString("Comms: Online", 0, 1);
+		return true;
 	}
 
 	private class inboundHandler extends Thread {
-		final Connection parent;
 		Queue<Message> msgQueue = new Queue<Message>();
 		Flag.Lock queueLock = new Flag.Lock();
-
-		private inboundHandler(Connection parent) {
-			this.parent = parent;
-		}
 
 		private Message popMessage() {
 			// If no messages, return null.
@@ -437,11 +333,11 @@ public class Comms {
 			debugMsg("Starting inbound message handler.");
 			while (!interrupted()) {
 				// Wait for there to be something to read.
-				size = parent.btc.available(2);
+				size = btc.available(2);
 				if (size > 0) {
 					envelope = new byte[size];
 					debugMsg("Message incoming...");
-					int read = parent.btc.read(envelope, size);
+					int read = btc.read(envelope, size);
 
 					if (read < 0) {
 						debugMsg("Read Error: " + read);
@@ -458,7 +354,7 @@ public class Comms {
 
 					if (msg.type == Message.TYPE_HANDSHAKE) {
 						debugMsg("Message was handshake. Updating friendly name...");
-						parent.partner = msg.readAsString();
+						partner = msg.readAsString();
 					} else {
 						debugMsg("Message unpacked. Adding to list...");
 						queueLock.acquire();
@@ -474,13 +370,8 @@ public class Comms {
 	}
 
 	private class outboundHandler extends Thread {
-		final Connection parent;
 		Queue<Message> msgQueue = new Queue<Message>();
 		Flag.Lock queueLock = new Flag.Lock();
-
-		private outboundHandler(Connection parent) {
-			this.parent = parent;
-		}
 
 		private void pushMessage(Message msg) {
 			queueLock.acquire();
@@ -497,9 +388,9 @@ public class Comms {
 
 				// If no messages, send keep-alive.
 				if (msgQueue.empty()) {
-					if (parent.btc.write(keepAlive, 1) < 0) {
+					if (btc.write(keepAlive, 1) < 0) {
 						debugMsg("Failed to send keepAlive.");
-						parent.close();
+						close();
 					}
 				}
 
@@ -518,7 +409,7 @@ public class Comms {
 					int size = envelope.length;
 
 					debugMsg("Sending message...");
-					int wrote = parent.btc.write(envelope, size);
+					int wrote = btc.write(envelope, size);
 
 					if (wrote != size) {
 						debugMsg("Write Error: Wrote " + wrote + " of " + size

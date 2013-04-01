@@ -14,7 +14,6 @@ import lejos.nxt.Motor;
 import lejos.nxt.SensorPort;
 import lejos.nxt.Sound;
 import lejos.robotics.RegulatedMotor;
-import lejos.util.Delay;
 
 /**
  * The FindGoal class contains all of the sub-classes for this assignment.
@@ -59,7 +58,6 @@ public class FindGoal {
 
 	// Communications:
 	static Comms comms;
-	static Comms.Connection turret;
 	static String turretName = "Alien";
 	static boolean hasTurret;
 
@@ -103,7 +101,7 @@ public class FindGoal {
 				LCD.clear(4);
 				LCD.drawString("Sending...", 0, 4);
 				msg = new Comms.Message("Hello #" + i++);
-				turret.send(msg);
+				comms.send(msg);
 				LCD.clear(4);
 				LCD.drawString("Sent!", 0, 4);
 				Button.ENTER.waitForPressAndRelease();
@@ -120,7 +118,7 @@ public class FindGoal {
 				LCD.clear(4);
 				LCD.drawString("Checking...", 0, 4);
 
-				msg = turret.receive();
+				msg = comms.receive();
 				if (msg != null) {
 					LCD.clear(4);
 					LCD.drawString(msg.readAsString(), 0, 4);
@@ -143,14 +141,14 @@ public class FindGoal {
 		LCD.clear(0);
 
 		msg = new Comms.Message("Searching...");
-		turret.send(msg);
+		comms.send(msg);
 
 		// Find the goal.
 		searchForGoal(pilot, MODE_CURRENT);
 
 		// Sound victory.
 		msg = new Comms.Message("Found goal!");
-		turret.send(msg);
+		comms.send(msg);
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
@@ -169,28 +167,24 @@ public class FindGoal {
 			LCD.clear(0);
 			LCD.drawString("FOUND GOAL!", 0, 0);
 			msg = new Comms.Message("Found home!");
-			turret.send(msg);
+			comms.send(msg);
 		} else {
 			LCD.clear(0);
 			LCD.drawString("Failed. :(", 0, 0);
 			msg = new Comms.Message("So sad.");
-			turret.send(msg);
+			comms.send(msg);
 		}
 
 		// Wait for permission to stop.
 		Button.ESCAPE.waitForPressAndRelease();
 
-		turret.close();
+		comms.close();
 	}
 
 	private static boolean connectToTurret() {
 		// Attempt to connect to turret.
-		do {
-			turret = comms.getConnection(turretName, false);
-			Delay.msDelay(100);
-		} while (turret == null && Button.ESCAPE.isUp());
-
-		return turret == null ? false : turret.isConnected();
+		comms = new Comms();
+		return comms.listen();
 	}
 
 	private static void searchForGoal(Pilot pilot, int mode) {

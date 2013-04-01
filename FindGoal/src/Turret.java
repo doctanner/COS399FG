@@ -16,7 +16,6 @@ public class Turret {
 
 	// Communications:
 	static Comms comms = new Comms();
-	static Comms.Connection base;
 	static String baseName = "Predator";
 
 	/**
@@ -31,54 +30,55 @@ public class Turret {
 		Button.ENTER.waitForPressAndRelease();
 		LCD.drawString("Connecting...", 0, 0);
 		// Connect to base.
-		base = comms.getConnection(baseName, true);
-		LCD.clear(0);
-		LCD.drawString("Connected!", 0, 0);
+		if (comms.connect()) {
+			LCD.clear(0);
+			LCD.drawString("Connected!", 0, 0);
 
-		while (base.isConnected()) {
+			while (comms.isConnected()) {
 
-			int i = 1;
-			int pressed;
-			Comms.Message msg;
-			do {
-				LCD.drawString("Send Message " + i + "?", 0, 4);
-				pressed = Button.waitForAnyPress();
+				int i = 1;
+				int pressed;
+				Comms.Message msg;
+				do {
+					LCD.drawString("Send Message " + i + "?", 0, 4);
+					pressed = Button.waitForAnyPress();
 
-				if (pressed == Button.ID_ENTER) {
-					LCD.clear(4);
-					LCD.drawString("Sending...", 0, 4);
-					msg = new Comms.Message("Hello #" + i++);
-					base.send(msg);
-					LCD.clear(4);
-					LCD.drawString("Sent!", 0, 4);
-					Button.ENTER.waitForPressAndRelease();
-				}
-
-			} while (pressed != Button.ID_ESCAPE);
-
-			i = 1;
-			do {
-				LCD.drawString("Check Message " + i + "?", 0, 4);
-				pressed = Button.waitForAnyPress();
-
-				if (pressed == Button.ID_ENTER) {
-					LCD.clear(4);
-					LCD.drawString("Checking...", 0, 4);
-
-					msg = base.receive();
-					if (msg != null) {
+					if (pressed == Button.ID_ENTER) {
 						LCD.clear(4);
-						LCD.drawString(msg.readAsString(), 0, 4);
-						i++;
-						Button.ENTER.waitForPressAndRelease();
-					} else {
+						LCD.drawString("Sending...", 0, 4);
+						msg = new Comms.Message("Hello #" + i++);
+						comms.send(msg);
 						LCD.clear(4);
-						LCD.drawString("Nothing.", 0, 4);
+						LCD.drawString("Sent!", 0, 4);
 						Button.ENTER.waitForPressAndRelease();
 					}
-				}
 
-			} while (pressed != Button.ID_ESCAPE);
+				} while (pressed != Button.ID_ESCAPE);
+
+				i = 1;
+				do {
+					LCD.drawString("Check Message " + i + "?", 0, 4);
+					pressed = Button.waitForAnyPress();
+
+					if (pressed == Button.ID_ENTER) {
+						LCD.clear(4);
+						LCD.drawString("Checking...", 0, 4);
+
+						msg = comms.receive();
+						if (msg != null) {
+							LCD.clear(4);
+							LCD.drawString(msg.readAsString(), 0, 4);
+							i++;
+							Button.ENTER.waitForPressAndRelease();
+						} else {
+							LCD.clear(4);
+							LCD.drawString("Nothing.", 0, 4);
+							Button.ENTER.waitForPressAndRelease();
+						}
+					}
+
+				} while (pressed != Button.ID_ESCAPE);
+			}
 		}
 	}
 
