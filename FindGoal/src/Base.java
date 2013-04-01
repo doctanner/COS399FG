@@ -13,6 +13,7 @@ import lejos.nxt.LCD;
 import lejos.nxt.Motor;
 import lejos.nxt.SensorPort;
 import lejos.nxt.Sound;
+import lejos.nxt.TouchSensor;
 import lejos.robotics.RegulatedMotor;
 
 /**
@@ -26,29 +27,32 @@ public class Base {
 	private static final int CENTER_TO_SENSOR = 5; // TODO DETERMINE
 
 	// Movement constants:
-	private static final int DRIVE_SPEED = 600; // Known Good: 850
-	private static final int DRIVE_ACCEL = 500; // Known Good: 500
-	private static final int ESTOP_ACCEL = 2700; // Known Good: 1500
-	private static final int ROTATE_SPEED = 350; // Known Good: 350
-	private static final int REVERSE_DIST = -10; // Known Good: -10
-	private static final int GRID_SIZE = 7 + CENTER_TO_SENSOR; // Known Good: 7
-	private static final int SEARCH_SIZE = 25; // Known Good: 20
-	private static final int DEGREES_PER_METER = -11345; // TODO Fine tune.
-	private static final int DEGREE_PER_360 = 6070; // Determined: 6077
+	private static final int DRIVE_SPEED = 900;
+	private static final int DRIVE_ACCEL = 500;
+	private static final int ESTOP_ACCEL = 2700;
+	private static final int ROTATE_SPEED = 400;
+	private static final int REVERSE_DIST = -15; //
+	private static final int GRID_SIZE = 7 + CENTER_TO_SENSOR;
+	private static final int SEARCH_SIZE = 25;
+	private static final int DEGREES_PER_METER = -11345;
+	private static final int DEGREE_PER_360 = 6070;
 
 	// Light Sensor Constants:
-	private static final SensorPort SENSE_PORT = SensorPort.S3;
-	@SuppressWarnings("unused")
-	private static final int COLOR_BOARD = ColorSensor.WHITE;
+	private static final SensorPort PORT_LIGHT = SensorPort.S3;
 	private static final int COLOR_EDGE = ColorSensor.BLACK;
-	@SuppressWarnings("unused")
 	private static final int COLOR_GOAL = ColorSensor.GREEN;
 	private static final int COLOR_HOME = ColorSensor.BLUE;
+	
+	// Touch Sensor constants
+	private static final SensorPort PORT_TOUCH_LEFT = SensorPort.S4;
+	private static final SensorPort PORT_TOUCH_RIGHT = SensorPort.S1;
 
 	// Objects:
-	protected static final RegulatedMotor motorLeft = Motor.B;
-	protected static final RegulatedMotor motorRight = Motor.C;
-	private static final ColorSensor sense = new ColorSensor(SENSE_PORT);
+	private static final RegulatedMotor motorLeft = Motor.B;
+	private static final RegulatedMotor motorRight = Motor.C;
+	private static final ColorSensor sense = new ColorSensor(PORT_LIGHT);
+	private static final TouchSensor touchLeft = new TouchSensor(PORT_TOUCH_LEFT);
+	private static final TouchSensor touchRight = new TouchSensor(PORT_TOUCH_RIGHT);
 	private static Pilot pilot;
 
 	// Communications:
@@ -69,7 +73,7 @@ public class Base {
 		// TODO Calibrate sensor.
 
 		// TODO REMOVE
-		//Comms.openDebugging();
+		// Comms.openDebugging();
 
 		// Start pilot.
 		pilot = new Pilot();
@@ -90,32 +94,22 @@ public class Base {
 		LCD.drawString("Waiting...", 0, 4);
 		Comms.Message msg;
 		boolean waiting = true;
-		do{
+		do {
 			msg = comms.receive();
-			if (msg != null && msg.type == Comms.Message.TYPE_COMMAND){
+			if (msg != null && msg.type == Comms.Message.TYPE_COMMAND) {
 				Comms.Command command = msg.readAsCommand();
 				waiting = command.type != Comms.Command.CMD_START;
 			}
-				
+
 		} while (waiting);
 		LCD.clear(4);
 
+		// Start sonar.
 		comms.send(new Comms.Message("Searching..."));
 		sendStart();
 
-		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
-		while (Button.ESCAPE.isUp()){
-			// Get commands.
-			msg = comms.receive();
-			if (msg != null && msg.type == Comms.Message.TYPE_COMMAND)
-				handleCommand(msg.readAsCommand());
-			
-			Thread.yield();
-		}
-		
-
 		// Find the goal.
-		searchForGoal();
+		randomSearch(COLOR_GOAL);
 
 		// Sound victory.
 		Sound.beepSequenceUp();
@@ -123,28 +117,13 @@ public class Base {
 		Sound.beepSequenceUp();
 
 		// Find home.
-		boolean foundHome = goHome();
+		randomSearch(COLOR_HOME);
+		Sound.beepSequence();
+		Sound.beepSequence();
+		Sound.beepSequence();
 
-		// Sound victory.
-		pilot.getPosition();
-
-		if (foundHome) {
-			Sound.beepSequence();
-			Sound.beepSequence();
-			Sound.beepSequence();
-
-			LCD.clear(0);
-			LCD.drawString("FOUND GOAL!", 0, 0);
-
-		} else {
-			LCD.clear(0);
-			LCD.drawString("Failed. :(", 0, 0);
-
-		}
-
-		// Wait for permission to stop.
-		Button.ESCAPE.waitForPressAndRelease();
-
+		Comms.Command command = new Comms.Command(Comms.Command.CMD_TERM, new byte[0]);
+		comms.send(new Comms.Message(command));
 		comms.close();
 	}
 
@@ -154,19 +133,11 @@ public class Base {
 		return comms.listen();
 	}
 
-	private static void handleCommand(Comms.Command command) {
-		switch (command.type) {
-		case Comms.Command.CMD_TERM:
-			System.exit(1);
-		case Comms.Command.CMD_HALT:
-			pilot.emergencyStop();
-			comms.send(new Comms.Message("Emergency stop!"));
-			Button.ENTER.waitForPressAndRelease();
-			pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
-			comms.send(new Comms.Message("Okay"));
-			sendStart();
-			pilot.resumeFromStop();
-		}
+	private static Comms.Command checkForCommand() {
+		Comms.Message msg = comms.receive();
+		if (msg != null && msg.type == Comms.Message.TYPE_COMMAND)
+			return msg.readAsCommand();
+		return null;
 
 	}
 
@@ -178,6 +149,99 @@ public class Base {
 	private static void sendStart() {
 		comms.send(new Comms.Message(new Comms.Command(Comms.Command.CMD_START,
 				new byte[0])));
+	}
+
+	private static void randomSearch(int target) {
+		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+		while (true) {
+			boolean leftTouched = touchLeft.isPressed();
+			boolean rightTouched = touchLeft.isPressed();
+			
+			if (leftTouched && rightTouched){
+				// Ran into something.
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+				pilot.resumeFromStop();
+				do {
+					Thread.yield();
+				} while (pilot.performingTasks);
+				sendStart();
+				int angle = (int) (Math.random() * 345) + 15;
+				pilot.pushTask(Task.TASK_ROTATE, angle, null);
+				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+			}
+			else if(leftTouched){
+				// Ran into something.
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+				pilot.resumeFromStop();
+				do {
+					Thread.yield();
+				} while (pilot.performingTasks);
+				sendStart();
+				int angle = 0 - (int) (Math.random() * 180);
+				pilot.pushTask(Task.TASK_ROTATE, angle, null);
+				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+			}
+			else if(rightTouched){
+				// Ran into something.
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+				pilot.resumeFromStop();
+				do {
+					Thread.yield();
+				} while (pilot.performingTasks);
+				sendStart();
+				int angle = (int) (Math.random() * 180);
+				pilot.pushTask(Task.TASK_ROTATE, angle, null);
+				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+			}
+			
+			Comms.Command command = checkForCommand();
+			if (command != null) {
+				switch (command.type) {
+				case Comms.Command.CMD_HALT:
+					// About to run into something.
+					pilot.emergencyStop();
+					pilot.eraseTasks();
+					pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+					pilot.resumeFromStop();
+					do {
+						Thread.yield();
+					} while (pilot.performingTasks);
+					sendStart();
+					int angle = (int) (Math.random() * 345) + 15;
+					pilot.pushTask(Task.TASK_ROTATE, angle, null);
+					pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+				}
+			}
+
+			int currColor = sense.getColor().getColor();
+			if (currColor == target) {
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.resumeFromStop();
+				return;
+			} else if (currColor == COLOR_EDGE) {
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.pushTask(Task.TASK_DRIVE, -GRID_SIZE, null);
+				pilot.resumeFromStop();
+
+				do {
+					Thread.yield();
+				} while (pilot.performingTasks);
+
+				int angle = (int) (Math.random() * 345) + 15;
+				pilot.pushTask(Task.TASK_ROTATE, angle, null);
+				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+			}
+
+			Thread.yield();
+		}
 	}
 
 	private static void searchForGoal() {

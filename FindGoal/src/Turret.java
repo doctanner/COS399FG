@@ -30,7 +30,7 @@ public class Turret {
 	protected static final RegulatedMotor motorWeapon = Motor.C;
 
 	// Sensor:
-	protected static final SensorPort SONAR_PORT = SensorPort.S1;
+	protected static final SensorPort SONAR_PORT = SensorPort.S4;
 	protected static final UltrasonicSensor sonar = new UltrasonicSensor(
 			SONAR_PORT);
 
@@ -58,13 +58,13 @@ public class Turret {
 		// TODO Use capture() to look for other sonars.
 
 		// TODO Remove
-		Comms.openDebugging();
+		//Comms.openDebugging();
 
 		LCD.drawString("Press Enter.", 0, 0);
 		Button.ENTER.waitForPressAndRelease();
 		LCD.drawString("Connecting...", 0, 0);
 		// Connect to base.
-		if (comms.connect()) {
+		if (comms.connect(baseName)) {
 			LCD.clear(0);
 			LCD.drawString("Connected!", 0, 0);
 		}

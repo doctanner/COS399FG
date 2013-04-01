@@ -59,8 +59,8 @@ public class Comms {
 			bytes[i] = (byte) (val >>> (i * 8));
 		return bytes;
 	}
-	
-	public static int bytesToInt(byte[] val){
+
+	public static int bytesToInt(byte[] val) {
 		int result = 0;
 		for (int i = 0; i < 4; i++) {
 			int temp = (int) val[0];
@@ -217,14 +217,26 @@ public class Comms {
 		btc = null;
 	}
 
-	public boolean connect() {
+	public boolean connect(String partner) {
 		// TODO Fix to work by pre-coded name.
-		RemoteDevice btrd = selectPartner();
+		// RemoteDevice btrd = selectPartner();
+		RemoteDevice btrd = Bluetooth.getKnownDevice(partner);
 
 		LCD.clear(1);
 		LCD.clear(2);
 		LCD.drawString("Comms: Connect", 0, 1);
 		LCD.drawString("Outbound.", 0, 2);
+
+		// Check partner.
+		if (btrd == null) {
+			debugMsg("Could not connect to device");
+			LCD.clear(1);
+			LCD.clear(2);
+			LCD.drawString("Comms: ERR", 0, 1);
+			LCD.drawString("Bad Partner", 0, 2);
+			Button.waitForAnyPress();
+			btrd = selectPartner();
+		}
 
 		// Get friendly name of partner.
 		partner = btrd.getFriendlyName(false);
