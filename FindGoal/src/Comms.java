@@ -221,8 +221,10 @@ public class Comms {
 			while (true) {
 				// Wait for a connection
 				debugMsg("\nWaiting for connection...");
-				BTConnection btc = Bluetooth.waitForConnection(0, NXTConnection.PACKET);
-				if (btc == null) continue;
+				BTConnection btc = Bluetooth.waitForConnection(0,
+						NXTConnection.PACKET);
+				if (btc == null)
+					continue;
 				debugMsg("\nInbound connection...");
 				LCD.clear(1);
 				LCD.clear(2);
@@ -392,6 +394,12 @@ public class Comms {
 				return false;
 			}
 
+			// TODO REMOVE
+			// Send test message.
+			debugMsg("Sending test message...");
+			Message msg = new Message("Test message");
+			send(msg);
+
 			// Return
 			LCD.clear(1);
 			LCD.clear(2);
@@ -439,8 +447,8 @@ public class Comms {
 						debugMsg("Read Error: " + read);
 						continue;
 					}
-					
-					if (envelope[0] == Message.TYPE_KEEP_ALIVE){
+
+					if (envelope[0] == Message.TYPE_KEEP_ALIVE) {
 						debugMsg("Keepalive recieved.");
 						continue;
 					}
@@ -448,7 +456,6 @@ public class Comms {
 					debugMsg("Message recieved. Unpacking...");
 					Message msg = Message.unpack(envelope);
 
-					
 					if (msg.type == Message.TYPE_HANDSHAKE) {
 						debugMsg("Message was handshake. Updating friendly name...");
 						parent.partner = msg.readAsString();
@@ -483,17 +490,19 @@ public class Comms {
 
 		public void run() {
 			setDaemon(true);
-			byte[] keepAlive = {Message.TYPE_HANDSHAKE};
+			byte[] keepAlive = { Message.TYPE_HANDSHAKE };
 
 			debugMsg("Starting outbound message handler.");
 			while (!interrupted()) {
-				
+
 				// If no messages, send keep-alive.
-				if (msgQueue.empty()){
-					if (parent.btc.write(keepAlive, 1) < 0)
+				if (msgQueue.empty()) {
+					if (parent.btc.write(keepAlive, 1) < 0) {
 						debugMsg("Failed to send keepAlive.");
+						parent.close();
+					}
 				}
-				
+
 				// Otherwise, send the message.
 				else {
 					debugMsg("\nMessage in queue. Sending...");

@@ -69,6 +69,7 @@ public class Turret {
 					if (msg != null) {
 						LCD.clear(4);
 						LCD.drawString(msg.readAsString(), 0, 4);
+						i++;
 						Button.ENTER.waitForPressAndRelease();
 					} else {
 						LCD.clear(4);
