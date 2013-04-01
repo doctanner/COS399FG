@@ -24,7 +24,7 @@ public class Turret {
 	public static void main(String[] args) {
 
 		// TODO Remove
-		Comms.openDebugging();
+		//Comms.openDebugging();
 
 		LCD.drawString("Press Enter.", 0, 0);
 		Button.ENTER.waitForPressAndRelease();

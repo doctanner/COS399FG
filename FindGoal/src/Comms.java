@@ -269,20 +269,22 @@ public class Comms {
 		debugMsg("Sending test message...");
 		Message msg = new Message("Test message");
 		send(msg);
-		
+
 		return true;
 	}
-	
-	public boolean listen(){
-		if (isConnected()) return false;
-		
+
+	public boolean listen() {
+		if (isConnected())
+			return false;
+
 		debugMsg("Listening for connection...");
 		btc = Bluetooth.waitForConnection();
-		if (btc == null) return false;
+		if (btc == null)
+			return false;
 
 		debugMsg("Found connection...");
 		int size = btc.available();
-		while (size < 1){
+		while (size < 1) {
 			Thread.yield();
 			size = btc.available();
 		}
@@ -291,14 +293,14 @@ public class Comms {
 		byte[] envelope = new byte[size];
 		btc.read(envelope, size);
 		Message msg = Message.unpack(envelope);
-		
-		if (msg.type != Message.TYPE_HANDSHAKE){
+
+		if (msg.type != Message.TYPE_HANDSHAKE) {
 			debugMsg("Message wasn't handshake.");
 			btc.close();
 			btc = null;
 			return false;
 		}
-		
+
 		debugMsg("Handshake accepted.");
 		partner = msg.readAsString();
 		debugMsg("Connected to " + partner);
@@ -381,21 +383,12 @@ public class Comms {
 
 		public void run() {
 			setDaemon(true);
-			byte[] keepAlive = { Message.TYPE_HANDSHAKE };
 
 			debugMsg("Starting outbound message handler.");
 			while (!interrupted()) {
 
 				// If no messages, send keep-alive.
-				if (msgQueue.empty()) {
-					if (btc.write(keepAlive, 1) < 0) {
-						debugMsg("Failed to send keepAlive.");
-						close();
-					}
-				}
-
-				// Otherwise, send the message.
-				else {
+				if (!msgQueue.empty()) {
 					debugMsg("\nMessage in queue. Sending...");
 
 					// Pop message.
