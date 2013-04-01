@@ -1,6 +1,5 @@
 import lejos.nxt.Button;
 import lejos.nxt.LCD;
-import lejos.nxt.comm.Bluetooth;
 
 /**
  * James Tanner <br>
@@ -24,7 +23,10 @@ public class Turret {
 	 * @param args
 	 */
 	public static void main(String[] args) {
-				
+		
+		// TODO Remove
+		Comms.openDebugging();
+		
 		LCD.drawString("Press Enter.", 0, 0);
 		Button.ENTER.waitForPressAndRelease();
 		LCD.drawString("Connecting...", 0, 0);
@@ -34,17 +36,51 @@ public class Turret {
 		LCD.drawString("Connected!", 0, 0);
 
 		while (base.isConnected()) {
-			
-			LCD.clear(4);
-			LCD.drawString("Check Message?", 0, 4);
-			Button.ENTER.waitForPressAndRelease();
+
+			int i = 1;
+			int pressed;
 			Comms.Message msg;
-			msg = base.receive();
-			if (msg != null) {
-				LCD.clear(4);
-				LCD.drawString(msg.readAsString(), 0, 4);
-				Button.ENTER.waitForPressAndRelease();
-			}
+			do {
+				LCD.drawString("Send Message " + i + "?", 0, 4);
+				pressed = Button.waitForAnyPress();
+
+				if (pressed == Button.ID_ENTER) {
+					LCD.clear(4);
+					LCD.drawString("Sending...", 0, 4);
+					msg = new Comms.Message("Hello #" + i++);
+					if (base.send(msg)) {
+						LCD.clear(4);
+						LCD.drawString("Sent!", 0, 4);
+						Button.ENTER.waitForPressAndRelease();
+					} else {
+						Button.ENTER.waitForPressAndRelease();
+					}
+				}
+
+			} while (pressed != Button.ID_ESCAPE);
+
+			i = 1;
+			do {
+				LCD.drawString("Check Message " + i + "?", 0, 4);
+				pressed = Button.waitForAnyPress();
+
+				if (pressed == Button.ID_ENTER) {
+					LCD.clear(4);
+					LCD.drawString("Checking...", 0, 4);
+
+					msg = base.receive();
+					if (msg != null) {
+						LCD.clear(4);
+						LCD.drawString(msg.readAsString(), 0, 4);
+						Button.ENTER.waitForPressAndRelease();
+					} else {
+						LCD.clear(4);
+						LCD.drawString("Nothing.", 0, 4);
+						Button.ENTER.waitForPressAndRelease();
+					}
+				}
+
+			} while (pressed != Button.ID_ESCAPE);
 		}
 	}
 

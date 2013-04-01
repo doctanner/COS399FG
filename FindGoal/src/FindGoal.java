@@ -39,13 +39,16 @@ public class FindGoal {
 
 	// Light Sensor Constants:
 	private static final SensorPort SENSE_PORT = SensorPort.S3;
+	@SuppressWarnings("unused")
 	private static final int COLOR_BOARD = ColorSensor.WHITE;
 	private static final int COLOR_EDGE = ColorSensor.BLACK;
+	@SuppressWarnings("unused")
 	private static final int COLOR_GOAL = ColorSensor.GREEN;
 	private static final int COLOR_HOME = ColorSensor.BLUE;
 
 	// Search Constants:
 	private static final int MODE_NORMAL = 0;
+	@SuppressWarnings("unused")
 	private static final int MODE_FAR = 1;
 	private static final int MODE_CURRENT = MODE_NORMAL;
 
@@ -72,7 +75,7 @@ public class FindGoal {
 	public static void main(String[] args) {
 		// TODO Calibrate sensor.
 		
-		Comms.openDebugging();
+		// TODO REMOVE Comms.openDebugging();
 
 		// Start pilot.
 		Pilot pilot = new Pilot();
@@ -110,8 +113,33 @@ public class FindGoal {
 			}
 
 		} while (pressed != Button.ID_ESCAPE);
+		
+		i = 1;
+		do {
+			LCD.drawString("Check Message " + i + "?", 0, 4);
+			pressed = Button.waitForAnyPress();
 
-		LCD.drawString("Send Message?", 0, 4);
+			if (pressed == Button.ID_ENTER) {
+				LCD.clear(4);
+				LCD.drawString("Checking...", 0, 4);
+				
+				msg = turret.receive();
+				if (msg != null) {
+					LCD.clear(4);
+					LCD.drawString(msg.readAsString(), 0, 4);
+					Button.ENTER.waitForPressAndRelease();
+				}
+				else{
+					LCD.clear(4);
+					LCD.drawString("Nothing.", 0, 4);
+					Button.ENTER.waitForPressAndRelease();
+				}
+			}
+
+		} while (pressed != Button.ID_ESCAPE);
+
+		LCD.clear(4);
+		LCD.drawString("Start?", 0, 4);
 		Button.ENTER.waitForPressAndRelease();
 
 		// Wait to start.
@@ -172,8 +200,8 @@ public class FindGoal {
 	private static void searchForGoal(Pilot pilot, int mode) {
 
 		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+		@SuppressWarnings("unused")
 		boolean foundWall = false;
-		int turnDir = 1;
 
 		while (true) {
 			Color currColor = sense.getColor();

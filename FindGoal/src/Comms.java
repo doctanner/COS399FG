@@ -27,18 +27,22 @@ public class Comms {
 	/**
 	 * 
 	 */
-	public Comms() {		
+	public Comms() {
 		LCD.clear(1);
 		LCD.drawString("Comms: OFFLINE", 0, 1);
-		
-		
+
 		// Activate ConnectionListener
 		new ConnectionListener().start();
 	}
-	
-	public static void openDebugging(){
+
+	public static void openDebugging() {
 		// Debugging
 		RConsole.openAny(0);
+	}
+
+	private void debugMsg(String msg) {
+		if (RConsole.isOpen())
+			RConsole.println(msg);
 	}
 
 	public Connection getConnection(String partner, boolean create) {
@@ -60,10 +64,12 @@ public class Comms {
 		// Make a new connection if necessary.
 		if (result == null && create) {
 			// Make new connection.
+			debugMsg("Creating new connection to " + partner);
 			result = new Connection(partner);
 
 			// Add it to the list, if it connected.
 			if (result.isConnected()) {
+				debugMsg("Connection made. Adding to list.");
 				// Add this to list.
 				connListLock.acquire();
 				connList.add(result);
@@ -71,6 +77,7 @@ public class Comms {
 			}
 
 			else {
+				debugMsg("Connection failed.");
 				LCD.clear(1);
 				LCD.clear(2);
 				LCD.drawString("Comms: ERR", 0, 1);
@@ -92,7 +99,7 @@ public class Comms {
 		private final byte[] msg;
 		private final byte type;
 
-		// Recieving:
+		// Receiving:
 		private Message(byte[] msg, byte type) {
 			this.msg = msg;
 			this.type = type;
@@ -119,6 +126,7 @@ public class Comms {
 			type = TYPE_INT;
 		}
 
+		@SuppressWarnings("rawtypes")
 		public Message(Sendable object) {
 			type = object.getType();
 			msg = object.pack();
@@ -139,6 +147,7 @@ public class Comms {
 			return result;
 		}
 
+		@SuppressWarnings("rawtypes")
 		public Object readObject(Sendable object) {
 			// TODO Test object types.
 			return object.unpack(msg);
@@ -200,26 +209,30 @@ public class Comms {
 				if (conn.isConnected()) {
 					try {
 						// Get name from input stream.
-						byte msgType = conn.inStream.readByte();
+						DataInputStream inStream = conn.btc.openDataInputStream();
+						byte msgType = inStream.readByte();
 						LCD.clear(1);
 						LCD.clear(2);
+						debugMsg("Incomming connection.");
 						LCD.drawString("Comms: Connect", 0, 1);
 						LCD.drawString("Incoming.", 0, 2);
 
 						if (msgType != Message.TYPE_HANDSHAKE) {
+							debugMsg("First message wasn't handshake.");
 							conn.close();
 							break;
 							// TODO Handle non-handshake message more
 							// gracefully.
 						}
-						byte nameSize = conn.inStream.readByte();
+						byte nameSize = inStream.readByte();
 						LCD.clear(2);
 						LCD.drawString("Getting Name", 0, 2);
 						byte[] nameArr = new byte[nameSize];
 						LCD.clear(2);
 						LCD.drawString("Adding", 0, 2);
-						conn.inStream.read(nameArr);
+						inStream.read(nameArr);
 						conn.partner = new String(nameArr);
+						debugMsg("Connection reported as coming from" + conn.partner);
 
 						// Add this to list.
 						connListLock.acquire();
@@ -228,6 +241,7 @@ public class Comms {
 
 						// Start receiving on connection.
 						LCD.clear(2);
+						debugMsg("Starting message handler.");
 						LCD.drawString("Starting", 0, 2);
 						conn.start();
 
@@ -257,11 +271,6 @@ public class Comms {
 		// In-stream objects:
 		Flag.Lock queueLock = new Flag.Lock();
 		Queue<Message> msgQueue = new Queue<Message>();
-		DataInputStream inStream;
-
-		// Out-stream objects:
-		final Flag.Lock outLock = new Flag.Lock();
-		DataOutputStream outStream;
 
 		private Connection(String target) {
 			this.setDaemon(true);
@@ -276,37 +285,55 @@ public class Comms {
 			// Create connection from incoming request.
 			if (btcIn != null) {
 				btc = btcIn;
-				openStreams();
 				connected = true;
 			}
 		}
 
 		public boolean send(Message packet) {
+
+			debugMsg("\nsend():");
+
 			// If connection isn't open, fail.
-			if (!isConnected()){
+			if (!isConnected()) {
 				LCD.clear(4);
 				LCD.drawString("Not Connected.", 0, 4);
 				return false;
 			}
-			// Get lock on the connection.
-			outLock.acquire();
 			// TODO Make send non-blocking!!
 
 			// Try to send message.
 			boolean success;
 			try {
+				debugMsg("Opening new stream.");
+				DataOutputStream outStream = btc.openDataOutputStream();
+				
 				// Write message to stream.
+				debugMsg("Sending requested message.");
+				debugMsg("Sending type...");
 				outStream.writeByte(packet.type);
-				outStream.writeByte(packet.msg.length);
+
+				debugMsg("Sending length...");
+				outStream.write(packet.msg.length);
+
+				debugMsg("Sending message...");
 				outStream.write(packet.msg);
+
+				debugMsg("Flushing...");
+				debugMsg("Bytes: " + outStream.size());
 				outStream.flush();
+
+				debugMsg("Sent!");
 				success = true;
+				
+				debugMsg("Closing stream.");
+				outStream.close();
 			}
 
 			// Failed to send message:
 			catch (IOException e) {
-				if (RConsole.isOpen()){
-					RConsole.println(e.getMessage());
+				if (RConsole.isOpen()) {
+					RConsole.println(e.toString());
+					e.printStackTrace(RConsole.getPrintStream());
 				}
 				LCD.clear(4);
 				LCD.drawString("IOException!", 0, 4);
@@ -314,7 +341,6 @@ public class Comms {
 				// TODO Handle send failure.
 			}
 
-			outLock.release();
 			return success;
 		}
 
@@ -331,6 +357,8 @@ public class Comms {
 		}
 
 		public void run() {
+			
+			DataInputStream inStream = btc.openDataInputStream();
 			LCD.drawString("Con: " + partner, 0, 6);
 			while (!this.isInterrupted()) {
 				try {
@@ -338,7 +366,7 @@ public class Comms {
 					byte msgSize = inStream.readByte();
 					byte[] msgArr = new byte[msgSize];
 					inStream.read(msgArr);
-					
+
 					LCD.clear(6);
 					LCD.drawString("Con: Message!", 0, 6);
 					queueLock.acquire();
@@ -348,6 +376,13 @@ public class Comms {
 				} catch (IOException e) {
 					// TODO Handle receive failure.
 				}
+			}
+			
+			// Attempt to close input stream.
+			try {
+				inStream.close();
+			} catch (IOException e) {
+				// Just continue.
 			}
 			LCD.clear(6);
 		}
@@ -362,8 +397,6 @@ public class Comms {
 			this.interrupt();
 			connected = false;
 			btc.close();
-			inStream = null;
-			outStream = null;
 			btc = null;
 			connListLock.acquire();
 			connList.remove(this);
@@ -382,17 +415,19 @@ public class Comms {
 			// Get RemoteObject, if paired.
 			// RemoteDevice btrd = Bluetooth.getKnownDevice(partner);
 			partner = btrd.getFriendlyName(false);
-			if (btrd == null) {
-				LCD.clear(1);
-				LCD.clear(2);
-				LCD.drawString("Comms: ERR", 0, 1);
-				LCD.drawString("Bad partner", 0, 2);
-				Button.waitForAnyPress();
-				return false;
-			}
+			debugMsg("Actually connecting to " + partner);
+			// if (btrd == null) {
+			// LCD.clear(1);
+			// LCD.clear(2);
+			// LCD.drawString("Comms: ERR", 0, 1);
+			// LCD.drawString("Bad partner", 0, 2);
+			// Button.waitForAnyPress();
+			// return false;
+			// }
 			// Attempt to connect to RemoteObject
 			btc = Bluetooth.connect(btrd);
 			if (btc == null) {
+				debugMsg("Could not connect to device");
 				LCD.clear(1);
 				LCD.clear(2);
 				LCD.drawString("Comms: ERR", 0, 1);
@@ -401,9 +436,11 @@ public class Comms {
 				return false;
 			}
 
-			// Open io streams.
-			openStreams();
+			// Open output stream.
+			debugMsg("Opening output stream.");
+			DataOutputStream outStream = btc.openDataOutputStream();
 
+			debugMsg("Sending handshake.");
 			LCD.drawString("Handshake...", 0, 2);
 
 			// Send friendly name.
@@ -413,11 +450,26 @@ public class Comms {
 				outStream.writeByte(localName.length());
 				outStream.write(localName.getBytes());
 				outStream.flush();
+				debugMsg("Handshake complete.");
+				
+				debugMsg("Test sending second message.");
+				String hi ="Handshake Test";
+				outStream.write(Message.TYPE_STRING);
+				outStream.write(hi.length());
+				outStream.write(hi.getBytes());
+				outStream.flush();
+				debugMsg("Second message sent");
+				
+				debugMsg("Closing output stream.");
+				outStream.close();
+				
 			} catch (IOException e) {
+				debugMsg("Handshake failed");
 				return false;
 			}
 
 			// Connection established. Listen.
+			debugMsg("Starting inbound message handler.");
 			this.start();
 
 			// Return
@@ -425,11 +477,6 @@ public class Comms {
 			LCD.clear(2);
 			LCD.drawString("Comms: Online", 0, 1);
 			return true;
-		}
-
-		private void openStreams() {
-			inStream = btc.openDataInputStream();
-			outStream = btc.openDataOutputStream();
 		}
 	}
 
