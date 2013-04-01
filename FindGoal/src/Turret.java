@@ -23,10 +23,10 @@ public class Turret {
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		
+
 		// TODO Remove
 		Comms.openDebugging();
-		
+
 		LCD.drawString("Press Enter.", 0, 0);
 		Button.ENTER.waitForPressAndRelease();
 		LCD.drawString("Connecting...", 0, 0);
@@ -48,13 +48,10 @@ public class Turret {
 					LCD.clear(4);
 					LCD.drawString("Sending...", 0, 4);
 					msg = new Comms.Message("Hello #" + i++);
-					if (base.send(msg)) {
-						LCD.clear(4);
-						LCD.drawString("Sent!", 0, 4);
-						Button.ENTER.waitForPressAndRelease();
-					} else {
-						Button.ENTER.waitForPressAndRelease();
-					}
+					base.send(msg);
+					LCD.clear(4);
+					LCD.drawString("Sent!", 0, 4);
+					Button.ENTER.waitForPressAndRelease();
 				}
 
 			} while (pressed != Button.ID_ESCAPE);

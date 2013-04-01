@@ -74,7 +74,7 @@ public class FindGoal {
 	 */
 	public static void main(String[] args) {
 		// TODO Calibrate sensor.
-		
+
 		// TODO REMOVE Comms.openDebugging();
 
 		// Start pilot.
@@ -102,18 +102,14 @@ public class FindGoal {
 				LCD.clear(4);
 				LCD.drawString("Sending...", 0, 4);
 				msg = new Comms.Message("Hello #" + i++);
-				if (turret.send(msg)){
-					LCD.clear(4);
-					LCD.drawString("Sent!", 0, 4);
-					Button.ENTER.waitForPressAndRelease();
-				}
-				else{
-					Button.ENTER.waitForPressAndRelease();
-				}
+				turret.send(msg);
+				LCD.clear(4);
+				LCD.drawString("Sent!", 0, 4);
+				Button.ENTER.waitForPressAndRelease();
 			}
 
 		} while (pressed != Button.ID_ESCAPE);
-		
+
 		i = 1;
 		do {
 			LCD.drawString("Check Message " + i + "?", 0, 4);
@@ -122,14 +118,13 @@ public class FindGoal {
 			if (pressed == Button.ID_ENTER) {
 				LCD.clear(4);
 				LCD.drawString("Checking...", 0, 4);
-				
+
 				msg = turret.receive();
 				if (msg != null) {
 					LCD.clear(4);
 					LCD.drawString(msg.readAsString(), 0, 4);
 					Button.ENTER.waitForPressAndRelease();
-				}
-				else{
+				} else {
 					LCD.clear(4);
 					LCD.drawString("Nothing.", 0, 4);
 					Button.ENTER.waitForPressAndRelease();

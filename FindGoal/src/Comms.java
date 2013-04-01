@@ -209,7 +209,8 @@ public class Comms {
 				if (conn.isConnected()) {
 					try {
 						// Get name from input stream.
-						DataInputStream inStream = conn.btc.openDataInputStream();
+						DataInputStream inStream = conn.btc
+								.openDataInputStream();
 						byte msgType = inStream.readByte();
 						LCD.clear(1);
 						LCD.clear(2);
@@ -232,18 +233,13 @@ public class Comms {
 						LCD.drawString("Adding", 0, 2);
 						inStream.read(nameArr);
 						conn.partner = new String(nameArr);
-						debugMsg("Connection reported as coming from" + conn.partner);
+						debugMsg("Connection reported as coming from"
+								+ conn.partner);
 
 						// Add this to list.
 						connListLock.acquire();
 						connList.add(conn);
 						connListLock.release();
-
-						// Start receiving on connection.
-						LCD.clear(2);
-						debugMsg("Starting message handler.");
-						LCD.drawString("Starting", 0, 2);
-						conn.start();
 
 					} catch (IOException e) {
 						LCD.clear(1);
@@ -262,7 +258,7 @@ public class Comms {
 		}
 	}
 
-	public class Connection extends Thread {
+	public class Connection {
 		// Connection objects:
 		boolean connected;
 		BTConnection btc;
@@ -272,119 +268,44 @@ public class Comms {
 		Flag.Lock queueLock = new Flag.Lock();
 		Queue<Message> msgQueue = new Queue<Message>();
 
-		private Connection(String target) {
-			this.setDaemon(true);
+		// Message handlers:
+		inboundHandler in;
+		outboundHandler out;
 
+		private Connection(String target) {
 			// Attempt to connect.
 			connected = connect();
+			if (connected)
+				startHandlers();
 		}
 
 		private Connection(BTConnection btcIn) {
-			this.setDaemon(true);
-
 			// Create connection from incoming request.
 			if (btcIn != null) {
 				btc = btcIn;
 				connected = true;
+				startHandlers();
 			}
+		}
+
+		private void startHandlers() {
+			in = new inboundHandler(this);
+			out = new outboundHandler(this);
+			in.start();
+			out.start();
 		}
 
 		public boolean send(Message packet) {
-
-			debugMsg("\nsend():");
-
-			// If connection isn't open, fail.
-			if (!isConnected()) {
-				LCD.clear(4);
-				LCD.drawString("Not Connected.", 0, 4);
+			if (out == null)
 				return false;
-			}
-			// TODO Make send non-blocking!!
-
-			// Try to send message.
-			boolean success;
-			try {
-				debugMsg("Opening new stream.");
-				DataOutputStream outStream = btc.openDataOutputStream();
-				
-				// Write message to stream.
-				debugMsg("Sending requested message.");
-				debugMsg("Sending type...");
-				outStream.writeByte(packet.type);
-
-				debugMsg("Sending length...");
-				outStream.write(packet.msg.length);
-
-				debugMsg("Sending message...");
-				outStream.write(packet.msg);
-
-				debugMsg("Flushing...");
-				debugMsg("Bytes: " + outStream.size());
-				outStream.flush();
-
-				debugMsg("Sent!");
-				success = true;
-				
-				debugMsg("Closing stream.");
-				outStream.close();
-			}
-
-			// Failed to send message:
-			catch (IOException e) {
-				if (RConsole.isOpen()) {
-					RConsole.println(e.toString());
-					e.printStackTrace(RConsole.getPrintStream());
-				}
-				LCD.clear(4);
-				LCD.drawString("IOException!", 0, 4);
-				success = false;
-				// TODO Handle send failure.
-			}
-
-			return success;
+			out.pushMessage(packet);
+			return true;
 		}
 
 		public Message receive() {
-			// If no messages, return null.
-			if (msgQueue.isEmpty())
+			if (in == null)
 				return null;
-
-			// Otherwise, return next message.
-			queueLock.acquire();
-			Message msg = (Message) msgQueue.pop();
-			queueLock.release();
-			return msg;
-		}
-
-		public void run() {
-			
-			DataInputStream inStream = btc.openDataInputStream();
-			LCD.drawString("Con: " + partner, 0, 6);
-			while (!this.isInterrupted()) {
-				try {
-					byte msgType = inStream.readByte();
-					byte msgSize = inStream.readByte();
-					byte[] msgArr = new byte[msgSize];
-					inStream.read(msgArr);
-
-					LCD.clear(6);
-					LCD.drawString("Con: Message!", 0, 6);
-					queueLock.acquire();
-					msgQueue.push(new Message(msgArr, msgType));
-					queueLock.release();
-
-				} catch (IOException e) {
-					// TODO Handle receive failure.
-				}
-			}
-			
-			// Attempt to close input stream.
-			try {
-				inStream.close();
-			} catch (IOException e) {
-				// Just continue.
-			}
-			LCD.clear(6);
+			return in.popMessage();
 		}
 
 		public boolean isConnected() {
@@ -394,17 +315,24 @@ public class Comms {
 		}
 
 		public void close() {
-			this.interrupt();
-			connected = false;
-			btc.close();
-			btc = null;
 			connListLock.acquire();
 			connList.remove(this);
 			connListLock.release();
+			connected = false;
+			if (in != null) {
+				in.interrupt();
+				in = null;
+			}
+			if (out != null) {
+				out.interrupt();
+				out = null;
+			}
+			btc.close();
+			btc = null;
 		}
 
 		private boolean connect() {
-
+			// TODO Fix to work by pre-coded name.
 			RemoteDevice btrd = selectPartner();
 
 			LCD.clear(1);
@@ -412,20 +340,12 @@ public class Comms {
 			LCD.drawString("Comms: Connect", 0, 1);
 			LCD.drawString("Outgoing.", 0, 2);
 
-			// Get RemoteObject, if paired.
-			// RemoteDevice btrd = Bluetooth.getKnownDevice(partner);
+			// Get friendly name of partner.
 			partner = btrd.getFriendlyName(false);
 			debugMsg("Actually connecting to " + partner);
-			// if (btrd == null) {
-			// LCD.clear(1);
-			// LCD.clear(2);
-			// LCD.drawString("Comms: ERR", 0, 1);
-			// LCD.drawString("Bad partner", 0, 2);
-			// Button.waitForAnyPress();
-			// return false;
-			// }
+
 			// Attempt to connect to RemoteObject
-			btc = Bluetooth.connect(btrd);
+			btc = Bluetooth.connect(partner, NXTConnection.PACKET);
 			if (btc == null) {
 				debugMsg("Could not connect to device");
 				LCD.clear(1);
@@ -451,32 +371,152 @@ public class Comms {
 				outStream.write(localName.getBytes());
 				outStream.flush();
 				debugMsg("Handshake complete.");
-				
-				debugMsg("Test sending second message.");
-				String hi ="Handshake Test";
-				outStream.write(Message.TYPE_STRING);
-				outStream.write(hi.length());
-				outStream.write(hi.getBytes());
-				outStream.flush();
-				debugMsg("Second message sent");
-				
+
 				debugMsg("Closing output stream.");
 				outStream.close();
-				
+
 			} catch (IOException e) {
 				debugMsg("Handshake failed");
 				return false;
 			}
-
-			// Connection established. Listen.
-			debugMsg("Starting inbound message handler.");
-			this.start();
 
 			// Return
 			LCD.clear(1);
 			LCD.clear(2);
 			LCD.drawString("Comms: Online", 0, 1);
 			return true;
+		}
+	}
+
+	private class inboundHandler extends Thread {
+		final Connection parent;
+		DataInputStream inStream;
+		Queue<Message> msgQueue = new Queue<Message>();
+		Flag.Lock queueLock = new Flag.Lock();
+
+		private inboundHandler(Connection parent) {
+			this.parent = parent;
+		}
+
+		private Message popMessage() {
+			// If no messages, return null.
+			if (msgQueue.isEmpty())
+				return null;
+
+			// Otherwise, return next message.
+			queueLock.acquire();
+			Message msg = (Message) msgQueue.pop();
+			queueLock.release();
+			return msg;
+		}
+
+		public void run() {
+			setDaemon(true);
+
+			debugMsg("Starting inbound message handler.");
+			inStream = parent.btc.openDataInputStream();
+			while (!interrupted()) {
+				// Wait for there to be something to read.
+				if (parent.btc.available() > 0) {
+					try {
+						byte msgType = inStream.readByte();
+						debugMsg("\nMessage incoming...\nType: " + msgType);
+						byte msgSize = inStream.readByte();
+						debugMsg("Size: " + msgSize);
+						byte[] msgArr = new byte[msgSize];
+						inStream.read(msgArr);
+						debugMsg("Message recieved. Adding to list...");
+
+						queueLock.acquire();
+						msgQueue.push(new Message(msgArr, msgType));
+						queueLock.release();
+						debugMsg("Done.");
+
+					} catch (IOException e) {
+						debugMsg("Inbound Handler: IOException Thrown!");
+						parent.in = null;
+						break;
+						// TODO Handle receive failure better.
+					}
+				}
+				
+				Thread.yield();
+			}
+
+			// Attempt to close input stream.
+			try {
+				debugMsg("Attempting to close input stream...");
+				inStream.close();
+			} catch (IOException e) {
+				debugMsg("Couldn't close input stream.");
+			}
+		}
+	}
+
+	private class outboundHandler extends Thread {
+		final Connection parent;
+		DataOutputStream outStream;
+		Queue<Message> msgQueue = new Queue<Message>();
+		Flag.Lock queueLock = new Flag.Lock();
+
+		private outboundHandler(Connection parent) {
+			this.parent = parent;
+		}
+
+		private void pushMessage(Message msg) {
+			queueLock.acquire();
+			msgQueue.push(msg);
+			queueLock.release();
+		}
+
+		public void run() {
+			setDaemon(true);
+
+			debugMsg("Starting outbound message handler.");
+			outStream = parent.btc.openDataOutputStream();
+			while (!interrupted()) {
+				if (!msgQueue.empty()) {
+					debugMsg("\nMessage in queue. Sending...");
+
+					// Pop message.
+					queueLock.acquire();
+					Message envelope = (Message) msgQueue.pop();
+					queueLock.release();
+
+					// Write message to stream.
+					try {
+						debugMsg("Sending type...");
+						outStream.write(envelope.type);
+
+						debugMsg("Sending length...");
+						outStream.write(envelope.msg.length);
+
+						debugMsg("Sending message...");
+						outStream.write(envelope.msg);
+
+						debugMsg("Flushing...");
+						outStream.flush();
+
+						debugMsg("Sent!");
+
+					} catch (IOException e) {
+						debugMsg("Outbound Handler: IOException Thrown!");
+						parent.out = null;
+						break;
+						// TODO Handle send failure better.
+					}
+				}
+
+				Thread.yield();
+			}
+
+			// Attempt to close stream.
+			try {
+				debugMsg("Attempting to close output stream...");
+				outStream.close();
+			} catch (IOException e) {
+				debugMsg("Couldn't close output stream.");
+			}
 		}
 	}
 
