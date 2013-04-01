@@ -75,7 +75,8 @@ public class FindGoal {
 	public static void main(String[] args) {
 		// TODO Calibrate sensor.
 
-		// TODO REMOVE Comms.openDebugging();
+		// TODO REMOVE
+		//Comms.openDebugging();
 
 		// Start pilot.
 		Pilot pilot = new Pilot();

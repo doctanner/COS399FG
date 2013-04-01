@@ -1,4 +1,3 @@
-import java.io.*;
 import java.util.ArrayList;
 import java.util.Queue;
 
@@ -38,6 +37,7 @@ public class Comms {
 	public static void openDebugging() {
 		// Debugging
 		RConsole.openAny(0);
+		System.setErr(RConsole.getPrintStream());
 	}
 
 	private void debugMsg(String msg) {
@@ -90,11 +90,12 @@ public class Comms {
 	}
 
 	public static class Message {
-		static final byte TYPE_HANDSHAKE = -128;
-		static final byte TYPE_BYTES = -127;
-		static final byte TYPE_STRING = -126;
-		static final byte TYPE_INT = -125;
-		static final byte HIGHEST_TYPE = -125;
+		static final byte TYPE_KEEP_ALIVE = -128;
+		static final byte TYPE_HANDSHAKE = -127;
+		static final byte TYPE_BYTES = -126;
+		static final byte TYPE_STRING = -125;
+		static final byte TYPE_INT = -124;
+		static final byte HIGHEST_TYPE = -124;
 
 		private final byte[] msg;
 		private final byte type;
@@ -219,53 +220,48 @@ public class Comms {
 			// Listen for new connections forever.
 			while (true) {
 				// Wait for a connection
-				BTConnection btc = Bluetooth.waitForConnection();
-				Connection conn = new Connection(btc);
+				debugMsg("\nWaiting for connection...");
+				BTConnection btc = Bluetooth.waitForConnection(0, NXTConnection.PACKET);
+				if (btc == null) continue;
+				debugMsg("\nInbound connection...");
+				LCD.clear(1);
+				LCD.clear(2);
+				LCD.drawString("Comms: Connect", 0, 1);
+				LCD.drawString("Inbound", 0, 2);
 
-				// If connection made properly.
-				if (conn.isConnected()) {
-					try {
-						// Get name from input stream.
-						DataInputStream inStream = conn.btc
-								.openDataInputStream();
-						byte msgType = inStream.readByte();
-						LCD.clear(1);
-						LCD.clear(2);
-						debugMsg("Incomming connection.");
-						LCD.drawString("Comms: Connect", 0, 1);
-						LCD.drawString("Incoming.", 0, 2);
+				int size;
+				do {
+					Thread.yield();
+					size = btc.available(2);
+				} while (size < 1);
 
-						if (msgType != Message.TYPE_HANDSHAKE) {
-							debugMsg("First message wasn't handshake.");
-							conn.close();
-							break;
-							// TODO Handle non-handshake message more
-							// gracefully.
-						}
-						byte nameSize = inStream.readByte();
-						LCD.clear(2);
-						LCD.drawString("Getting Name", 0, 2);
-						byte[] nameArr = new byte[nameSize];
-						LCD.clear(2);
-						LCD.drawString("Adding", 0, 2);
-						inStream.read(nameArr);
-						conn.partner = new String(nameArr);
-						debugMsg("Connection reported as coming from"
-								+ conn.partner);
+				debugMsg("Getting Message...");
+				byte[] envelope = new byte[size];
+				int read = btc.read(envelope, size);
 
-						// Add this to list.
-						connListLock.acquire();
-						connList.add(conn);
-						connListLock.release();
+				if (read < 0) {
+					debugMsg("Read Error: " + read);
+					LCD.clear(1);
+					LCD.clear(2);
+					LCD.drawString("Comms: ERR", 0, 1);
+					LCD.drawString("ERR: Read Error", 0, 2);
+					continue;
+				}
 
-					} catch (IOException e) {
-						LCD.clear(1);
-						LCD.clear(2);
-						LCD.drawString("Comms: ERR", 0, 1);
-						LCD.drawString("ERR: ConListen", 0, 2);
-						Button.waitForAnyPress();
-						System.exit(0);
-					}
+				debugMsg("Message recieved. Unpacking...");
+				Message msg = Message.unpack(envelope);
+
+				if (msg.type == Message.TYPE_HANDSHAKE) {
+					debugMsg("Message was handshake.");
+					String partner = msg.readAsString();
+					debugMsg("Creating connection with " + partner);
+					new Connection(btc, partner);
+				} else {
+					debugMsg("Message was not handshake. Aborting.");
+					LCD.clear(1);
+					LCD.clear(2);
+					LCD.drawString("Comms: ERR", 0, 1);
+					LCD.drawString("ERR: Bad Handshake", 0, 2);
 				}
 
 				LCD.clear(1);
@@ -296,12 +292,16 @@ public class Comms {
 				startHandlers();
 		}
 
-		private Connection(BTConnection btcIn) {
+		private Connection(BTConnection btcIn, String source) {
 			// Create connection from incoming request.
 			if (btcIn != null) {
 				btc = btcIn;
+				partner = source;
 				connected = true;
 				startHandlers();
+				connListLock.acquire();
+				connList.add(this);
+				connListLock.release();
 			}
 		}
 
@@ -355,7 +355,7 @@ public class Comms {
 			LCD.clear(1);
 			LCD.clear(2);
 			LCD.drawString("Comms: Connect", 0, 1);
-			LCD.drawString("Outgoing.", 0, 2);
+			LCD.drawString("Outbound.", 0, 2);
 
 			// Get friendly name of partner.
 			partner = btrd.getFriendlyName(false);
@@ -373,27 +373,22 @@ public class Comms {
 				return false;
 			}
 
-			// Open output stream.
-			debugMsg("Opening output stream.");
-			DataOutputStream outStream = btc.openDataOutputStream();
+			debugMsg("Generating Handshake...");
+			byte[] fname = Bluetooth.getFriendlyName().getBytes();
+			int size = fname.length;
+			byte[] envelope = new byte[size + 1];
+			envelope[0] = Message.TYPE_HANDSHAKE;
+			System.arraycopy(fname, 0, envelope, 1, size);
 
-			debugMsg("Sending handshake.");
-			LCD.drawString("Handshake...", 0, 2);
+			debugMsg("Sending Handshake...");
+			int wrote = btc.write(envelope, size + 1);
 
-			// Send friendly name.
-			try {
-				String localName = Bluetooth.getFriendlyName();
-				outStream.writeByte(Message.TYPE_HANDSHAKE);
-				outStream.writeByte(localName.length());
-				outStream.write(localName.getBytes());
-				outStream.flush();
-				debugMsg("Handshake complete.");
-
-				debugMsg("Closing output stream.");
-				outStream.close();
-
-			} catch (IOException e) {
-				debugMsg("Handshake failed");
+			if (wrote < 0) {
+				debugMsg("Handshake Failed: " + wrote);
+				LCD.clear(1);
+				LCD.clear(2);
+				LCD.drawString("Comms: ERR", 0, 1);
+				LCD.drawString("Handshake Fail", 0, 2);
 				return false;
 			}
 
@@ -444,15 +439,25 @@ public class Comms {
 						debugMsg("Read Error: " + read);
 						continue;
 					}
+					
+					if (envelope[0] == Message.TYPE_KEEP_ALIVE){
+						debugMsg("Keepalive recieved.");
+						continue;
+					}
 
 					debugMsg("Message recieved. Unpacking...");
 					Message msg = Message.unpack(envelope);
 
-					debugMsg("Message unpacked. Adding to list...");
-
-					queueLock.acquire();
-					msgQueue.push(msg);
-					queueLock.release();
+					
+					if (msg.type == Message.TYPE_HANDSHAKE) {
+						debugMsg("Message was handshake. Updating friendly name...");
+						parent.partner = msg.readAsString();
+					} else {
+						debugMsg("Message unpacked. Adding to list...");
+						queueLock.acquire();
+						msgQueue.push(msg);
+						queueLock.release();
+					}
 					debugMsg("Done.");
 				}
 
@@ -478,10 +483,19 @@ public class Comms {
 
 		public void run() {
 			setDaemon(true);
+			byte[] keepAlive = {Message.TYPE_HANDSHAKE};
 
 			debugMsg("Starting outbound message handler.");
 			while (!interrupted()) {
-				if (!msgQueue.empty()) {
+				
+				// If no messages, send keep-alive.
+				if (msgQueue.empty()){
+					if (parent.btc.write(keepAlive, 1) < 0)
+						debugMsg("Failed to send keepAlive.");
+				}
+				
+				// Otherwise, send the message.
+				else {
 					debugMsg("\nMessage in queue. Sending...");
 
 					// Pop message.
@@ -500,8 +514,7 @@ public class Comms {
 					if (wrote != size) {
 						debugMsg("Write Error: Wrote " + wrote + " of " + size
 								+ " bytes.");
-					}
-					else if (wrote < 0){
+					} else if (wrote < 0) {
 						debugMsg("Write Error: " + wrote);
 					}
 				}
