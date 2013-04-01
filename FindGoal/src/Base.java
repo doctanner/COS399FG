@@ -30,7 +30,7 @@ public class Base {
 	private static final int DRIVE_SPEED = 900;
 	private static final int DRIVE_ACCEL = 500;
 	private static final int ESTOP_ACCEL = 2700;
-	private static final int ROTATE_SPEED = 400;
+	private static final int ROTATE_SPEED = 300;
 	private static final int REVERSE_DIST = -15; //
 	private static final int GRID_SIZE = 7 + CENTER_TO_SENSOR;
 	private static final int SEARCH_SIZE = 25;
@@ -95,6 +95,12 @@ public class Base {
 		Comms.Message msg;
 		boolean waiting = true;
 		do {
+			if (!comms.isConnected()){
+				LCD.clear(4);
+				LCD.drawString("Ready?", 0, 4);
+				Button.ENTER.waitForPressAndRelease();
+				waiting = false;
+			}
 			msg = comms.receive();
 			if (msg != null && msg.type == Comms.Message.TYPE_COMMAND) {
 				Comms.Command command = msg.readAsCommand();
@@ -112,6 +118,8 @@ public class Base {
 		randomSearch(COLOR_GOAL);
 
 		// Sound victory.
+		Comms.Command command = new Comms.Command(Comms.Command.CMD_FIRE, Comms.intToBytes(9));
+		comms.send(new Comms.Message(command));
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
 		Sound.beepSequenceUp();
@@ -122,8 +130,9 @@ public class Base {
 		Sound.beepSequence();
 		Sound.beepSequence();
 
-		Comms.Command command = new Comms.Command(Comms.Command.CMD_TERM, new byte[0]);
+		command = new Comms.Command(Comms.Command.CMD_TERM, new byte[0]);
 		comms.send(new Comms.Message(command));
+		Thread.yield();
 		comms.close();
 	}
 
@@ -154,8 +163,32 @@ public class Base {
 	private static void randomSearch(int target) {
 		pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 		while (true) {
+
+			int currColor = sense.getColor().getColor();
+			if (currColor == target) {
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.pushTask(Task.TASK_ROTATE, 180, null);
+				pilot.resumeFromStop();
+				return;
+			} else if (currColor == COLOR_EDGE) {
+				pilot.emergencyStop();
+				pilot.eraseTasks();
+				pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+				pilot.resumeFromStop();
+
+				do {
+					Thread.yield();
+				} while (pilot.performingTasks);
+
+				int angle = (int) (Math.random() * 360) - 180;
+				pilot.pushTask(Task.TASK_ROTATE, angle, null);
+				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
+				continue;
+			}
+			
 			boolean leftTouched = touchLeft.isPressed();
-			boolean rightTouched = touchLeft.isPressed();
+			boolean rightTouched = touchRight.isPressed();
 			
 			if (leftTouched && rightTouched){
 				// Ran into something.
@@ -167,7 +200,7 @@ public class Base {
 					Thread.yield();
 				} while (pilot.performingTasks);
 				sendStart();
-				int angle = (int) (Math.random() * 345) + 15;
+				int angle = (int) (Math.random() * 360) - 180;
 				pilot.pushTask(Task.TASK_ROTATE, angle, null);
 				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 			}
@@ -207,37 +240,15 @@ public class Base {
 					// About to run into something.
 					pilot.emergencyStop();
 					pilot.eraseTasks();
-					pilot.pushTask(Task.TASK_DRIVE, REVERSE_DIST, null);
+					int angle = (int) (Math.random() * 345) + 15;
+					pilot.pushTask(Task.TASK_ROTATE, angle, null);
 					pilot.resumeFromStop();
 					do {
 						Thread.yield();
 					} while (pilot.performingTasks);
 					sendStart();
-					int angle = (int) (Math.random() * 345) + 15;
-					pilot.pushTask(Task.TASK_ROTATE, angle, null);
 					pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 				}
-			}
-
-			int currColor = sense.getColor().getColor();
-			if (currColor == target) {
-				pilot.emergencyStop();
-				pilot.eraseTasks();
-				pilot.resumeFromStop();
-				return;
-			} else if (currColor == COLOR_EDGE) {
-				pilot.emergencyStop();
-				pilot.eraseTasks();
-				pilot.pushTask(Task.TASK_DRIVE, -GRID_SIZE, null);
-				pilot.resumeFromStop();
-
-				do {
-					Thread.yield();
-				} while (pilot.performingTasks);
-
-				int angle = (int) (Math.random() * 345) + 15;
-				pilot.pushTask(Task.TASK_ROTATE, angle, null);
-				pilot.pushTask(Task.TASK_FULLFORWARD, 0, null);
 			}
 
 			Thread.yield();

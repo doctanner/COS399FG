@@ -63,7 +63,7 @@ public class Comms {
 	public static int bytesToInt(byte[] val) {
 		int result = 0;
 		for (int i = 0; i < 4; i++) {
-			int temp = (int) val[0];
+			int temp = (int) val[i];
 			result |= (temp << (i * 8));
 		}
 		return result;
@@ -162,7 +162,7 @@ public class Comms {
 		public final static byte CMD_HALT = -127;
 		public final static byte CMD_START = -126;
 		public final static byte CMD_ROTATE = -125;
-		public final static byte CMD_MODE = -124;
+		public final static byte CMD_FIRE = -124;
 
 		public final byte type;
 		public final byte[] value;

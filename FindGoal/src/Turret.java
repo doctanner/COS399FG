@@ -9,6 +9,7 @@ import lejos.nxt.Button;
 import lejos.nxt.LCD;
 import lejos.nxt.Motor;
 import lejos.nxt.SensorPort;
+import lejos.nxt.Sound;
 import lejos.nxt.UltrasonicSensor;
 import lejos.robotics.RegulatedMotor;
 
@@ -18,11 +19,13 @@ import lejos.robotics.RegulatedMotor;
  */
 public class Turret {
 	// Movement constants:
-	private static final int TURN_SPEED = 600;
+	private static final int TURN_SPEED = 900;
 	private static final int TURN_ACCEL = 600;
 	private static final int SHOOT_SPEED = 900;
-	private static final int DEGREE_PER_360 = 845;
+	private static final int DEGREE_PER_1440 = 3380;
 	private static final int ALERT_THRESH = 18;
+	private static final int STALL_THRESH_DEGREE = 200;
+	private static final int STALL_THRESH_TIME = 10000;	
 
 	// Motors:
 	protected static final RegulatedMotor motorLeft = Motor.A;
@@ -30,7 +33,7 @@ public class Turret {
 	protected static final RegulatedMotor motorWeapon = Motor.C;
 
 	// Sensor:
-	protected static final SensorPort SONAR_PORT = SensorPort.S4;
+	protected static final SensorPort SONAR_PORT = SensorPort.S1;
 	protected static final UltrasonicSensor sonar = new UltrasonicSensor(
 			SONAR_PORT);
 
@@ -51,6 +54,8 @@ public class Turret {
 		motorRight.setSpeed(TURN_SPEED);
 		motorLeft.setAcceleration(TURN_ACCEL);
 		motorRight.setAcceleration(TURN_ACCEL);
+		motorLeft.setStallThreshold(STALL_THRESH_DEGREE, STALL_THRESH_TIME);
+		motorRight.setStallThreshold(STALL_THRESH_DEGREE, STALL_THRESH_TIME);
 		motorWeapon.setSpeed(SHOOT_SPEED);
 
 		// Set up sonar.
@@ -70,6 +75,7 @@ public class Turret {
 		}
 
 		LCD.clear(4);
+		Sound.beepSequenceUp();
 		LCD.drawString("Ready?", 0, 4);
 		Button.ENTER.waitForPressAndRelease();
 		LCD.clear(4);
@@ -118,6 +124,7 @@ public class Turret {
 	private static void handleCommand(Comms.Command command) {
 		switch (command.type) {
 		case Comms.Command.CMD_TERM:
+			comms.close();
 			System.exit(1);
 		case Comms.Command.CMD_ROTATE:
 			rotateTo(Comms.bytesToInt(command.value));
@@ -128,14 +135,24 @@ public class Turret {
 		case Comms.Command.CMD_HALT:
 			alert = false;
 			break;
+		case Comms.Command.CMD_FIRE:
+			int rounds = Comms.bytesToInt(command.value);
+			for (int i = 0; i < rounds; i++)
+				fire();
+			sendStart();
+			break;
 		}
 
 	}
 
 	private static void rotateTo(int angle) {
-		int motorAngle = (angle * DEGREE_PER_360) / 360;
-		motorLeft.rotateTo(motorAngle, true);
-		motorLeft.rotateTo(0 - motorAngle, true);
+		int motorAngle = (angle *  DEGREE_PER_1440) / 1440;
+		motorLeft.rotate(motorAngle, true);
+		motorLeft.rotate(0 - motorAngle, true);
+	}
+	
+	private static void fire(){
+		motorWeapon.rotate(360);
 	}
 
 }
