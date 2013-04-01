@@ -90,47 +90,7 @@ public class FindGoal {
 
 		LCD.drawString("Turret Found!", 0, 0);
 
-		int i = 1;
-		int pressed;
-		Comms.Message msg;
-		do {
-			LCD.drawString("Send Message " + i + "?", 0, 4);
-			pressed = Button.waitForAnyPress();
-
-			if (pressed == Button.ID_ENTER) {
-				LCD.clear(4);
-				LCD.drawString("Sending...", 0, 4);
-				msg = new Comms.Message("Hello #" + i++);
-				comms.send(msg);
-				LCD.clear(4);
-				LCD.drawString("Sent!", 0, 4);
-				Button.ENTER.waitForPressAndRelease();
-			}
-
-		} while (pressed != Button.ID_ESCAPE);
-
-		i = 1;
-		do {
-			LCD.drawString("Check Message " + i + "?", 0, 4);
-			pressed = Button.waitForAnyPress();
-
-			if (pressed == Button.ID_ENTER) {
-				LCD.clear(4);
-				LCD.drawString("Checking...", 0, 4);
-
-				msg = comms.receive();
-				if (msg != null) {
-					LCD.clear(4);
-					LCD.drawString(msg.readAsString(), 0, 4);
-					Button.ENTER.waitForPressAndRelease();
-				} else {
-					LCD.clear(4);
-					LCD.drawString("Nothing.", 0, 4);
-					Button.ENTER.waitForPressAndRelease();
-				}
-			}
-
-		} while (pressed != Button.ID_ESCAPE);
+		comms.send(new Comms.Message(new Comms.Command(Comms.Command.CMD_ROTATE, Comms.intToBytes(180))));
 
 		LCD.clear(4);
 		LCD.drawString("Start?", 0, 4);
@@ -140,7 +100,7 @@ public class FindGoal {
 		Button.ENTER.waitForPressAndRelease();
 		LCD.clear(0);
 
-		msg = new Comms.Message("Searching...");
+		Comms.Message msg = new Comms.Message("Searching...");
 		comms.send(msg);
 
 		// Find the goal.

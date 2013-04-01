@@ -52,16 +52,34 @@ public class Comms {
 			RConsole.println(msg);
 	}
 
+	public static byte[] intToBytes(int val) {
+		// Convert to byte array:
+		byte[] bytes = new byte[4];
+		for (int i = 0; i < 4; i++)
+			bytes[i] = (byte) (val >>> (i * 8));
+		return bytes;
+	}
+	
+	public static int bytesToInt(byte[] val){
+		int result = 0;
+		for (int i = 0; i < 4; i++) {
+			int temp = (int) val[0];
+			result |= (temp << (i * 8));
+		}
+		return result;
+	}
+
 	public static class Message {
-		static final byte TYPE_KEEP_ALIVE = -128;
-		static final byte TYPE_HANDSHAKE = -127;
-		static final byte TYPE_BYTES = -126;
-		static final byte TYPE_STRING = -125;
-		static final byte TYPE_INT = -124;
-		static final byte HIGHEST_TYPE = -124;
+		static private final byte TYPE_KEEP_ALIVE = -128;
+		static private final byte TYPE_HANDSHAKE = -127;
+		static public final byte TYPE_BYTES = -126;
+		static public final byte TYPE_STRING = -125;
+		static public final byte TYPE_INT = -124;
+		static public final byte TYPE_COMMAND = -123;
+		static public final byte HIGHEST_TYPE = -123;
 
 		private final byte[] msg;
-		private final byte type;
+		public final byte type;
 
 		// Sending
 		private byte[] pack() {
@@ -81,12 +99,13 @@ public class Comms {
 			return new Message(msg, type);
 		}
 
-		private Message(byte[] msg, byte type) {
+		// Constructors:
+
+		public Message(byte[] msg, byte type) {
 			this.msg = msg;
 			this.type = type;
 		}
 
-		// Packaging methods.
 		public Message(byte[] message) {
 			msg = message.clone();
 			type = TYPE_BYTES;
@@ -98,77 +117,61 @@ public class Comms {
 		}
 
 		public Message(int message) {
-			// Convert to byte array:
-			byte[] bytes = new byte[4];
-			for (int i = 0; i < 4; i++)
-				bytes[i] = (byte) (message >>> (i * 8));
-
-			msg = bytes;
+			msg = intToBytes(message);
 			type = TYPE_INT;
 		}
 
-		@SuppressWarnings("rawtypes")
-		public Message(Sendable object) {
-			type = object.getType();
-			msg = object.pack();
+		public Message(Command command) {
+			int size = command.value.length + 1;
+			msg = new byte[size];
+			msg[0] = command.type;
+			if (size > 1)
+				System.arraycopy(command.value, 0, msg, 1, size - 1);
+
+			type = TYPE_COMMAND;
 		}
 
-		// Unpackaging methods.
+		// Accessors:
 
 		public String readAsString() {
 			return new String(msg);
 		}
 
 		public int readAsInt() {
-			int result = 0;
-			for (int i = 0; i < 4; i++) {
-				int temp = (int) msg[0];
-				result |= (temp << (i * 8));
-			}
-			return result;
+			return bytesToInt(msg);
 		}
 
-		@SuppressWarnings("rawtypes")
-		public Object readObject(Sendable object) {
-			// TODO Test object types.
-			return object.unpack(msg);
+		public Command readAsCommand() {
+			byte type = msg[0];
+			int size = msg.length - 1;
+			byte[] val = new byte[size];
+			if (size > 0) {
+				System.arraycopy(msg, 1, val, 0, size);
+			}
+			return new Command(type, val);
+		}
+
+		public byte[] readRaw() {
+			return msg;
 		}
 	}
 
-	/**
-	 * @author James Tanner
-	 * 
-	 */
-	public interface Sendable<E> {
+	public static class Command {
+
+		public final static byte CMD_TERM = -128;
+		public final static byte CMD_HALT = -127;
+		public final static byte CMD_ROTATE = -126;
+
+		public final byte type;
+		public final byte[] value;
 
 		/**
-		 * All classes implementing the Sendable interface must have a type
-		 * identifier. This must be unique among all types recognized by the
-		 * system.
-		 * <p>
-		 * getType() should return the unique type ID for the implementing
-		 * object type.
 		 * 
-		 * @return type constant.
 		 */
-		public byte getType();
-
-		/**
-		 * This method should pack the implementing object into a byte array to
-		 * be messaged. It is used by the Message class and must be unpackable
-		 * using {@link #unpack()};
-		 * 
-		 * @return byte array representing the object.
-		 */
-		public byte[] pack();
-
-		/**
-		 * This method should reverse the process from {@link #pack()} to return
-		 * the original object.
-		 * 
-		 * @return Original object contained in a message.
-		 */
-		public E unpack(byte[] msg);
+		public Command(byte type, byte[] value) {
+			this.type = type;
+			this.value = value;
+		}
 
 	}
 
