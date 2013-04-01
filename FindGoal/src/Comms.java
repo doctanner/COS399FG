@@ -99,7 +99,24 @@ public class Comms {
 		private final byte[] msg;
 		private final byte type;
 
+		// Sending
+		private byte[] pack() {
+			int size = msg.length;
+			byte[] envelope = new byte[size + 1];
+			envelope[0] = type;
+			System.arraycopy(msg, 0, envelope, 1, size);
+			return envelope;
+		}
+
 		// Receiving:
+		private static Message unpack(byte[] envelope) {
+			byte type = envelope[0];
+			int size = envelope.length - 1;
+			byte[] msg = new byte[size];
+			System.arraycopy(envelope, 1, msg, 0, size);
+			return new Message(msg, type);
+		}
+
 		private Message(byte[] msg, byte type) {
 			this.msg = msg;
 			this.type = type;
@@ -390,7 +407,6 @@ public class Comms {
 
 	private class inboundHandler extends Thread {
 		final Connection parent;
-		DataInputStream inStream;
 		Queue<Message> msgQueue = new Queue<Message>();
 		Flag.Lock queueLock = new Flag.Lock();
 
@@ -412,50 +428,41 @@ public class Comms {
 
 		public void run() {
 			setDaemon(true);
+			byte[] envelope;
+			int size;
 
 			debugMsg("Starting inbound message handler.");
-			inStream = parent.btc.openDataInputStream();
 			while (!interrupted()) {
 				// Wait for there to be something to read.
-				if (parent.btc.available() > 0) {
-					try {
-						byte msgType = inStream.readByte();
-						debugMsg("\nMessage incoming...\nType: " + msgType);
-						byte msgSize = inStream.readByte();
-						debugMsg("Size: " + msgSize);
-						byte[] msgArr = new byte[msgSize];
-						inStream.read(msgArr);
-						debugMsg("Message recieved. Adding to list...");
+				size = parent.btc.available(2);
+				if (size > 0) {
+					envelope = new byte[size];
+					debugMsg("Message incoming...");
+					int read = parent.btc.read(envelope, size);
 
-						queueLock.acquire();
-						msgQueue.push(new Message(msgArr, msgType));
-						queueLock.release();
-						debugMsg("Done.");
-
-					} catch (IOException e) {
-						debugMsg("Inbound Handler: IOException Thrown!");
-						parent.in = null;
-						break;
-						// TODO Handle receive failure better.
+					if (read < 0) {
+						debugMsg("Read Error: " + read);
+						continue;
 					}
-				}
-				
-				Thread.yield();
-			}
 
-			// Attempt to close input stream.
-			try {
-				debugMsg("Attempting to close input stream...");
-				inStream.close();
-			} catch (IOException e) {
-				debugMsg("Couldn't close input stream.");
+					debugMsg("Message recieved. Unpacking...");
+					Message msg = Message.unpack(envelope);
+
+					debugMsg("Message unpacked. Adding to list...");
+
+					queueLock.acquire();
+					msgQueue.push(msg);
+					queueLock.release();
+					debugMsg("Done.");
+				}
+
+				Thread.yield();
 			}
 		}
 	}
 
 	private class outboundHandler extends Thread {
 		final Connection parent;
-		DataOutputStream outStream;
 		Queue<Message> msgQueue = new Queue<Message>();
 		Flag.Lock queueLock = new Flag.Lock();
 
@@ -473,49 +480,33 @@ public class Comms {
 			setDaemon(true);
 
 			debugMsg("Starting outbound message handler.");
-			outStream = parent.btc.openDataOutputStream();
 			while (!interrupted()) {
 				if (!msgQueue.empty()) {
 					debugMsg("\nMessage in queue. Sending...");
 
 					// Pop message.
 					queueLock.acquire();
-					Message envelope = (Message) msgQueue.pop();
+					Message msg = (Message) msgQueue.pop();
 					queueLock.release();
 
 					// Write message to stream.
-					try {
-						debugMsg("Sending type...");
-						outStream.write(envelope.type);
+					debugMsg("Packing message...");
+					byte[] envelope = msg.pack();
+					int size = envelope.length;
 
-						debugMsg("Sending length...");
-						outStream.write(envelope.msg.length);
+					debugMsg("Sending message...");
+					int wrote = parent.btc.write(envelope, size);
 
-						debugMsg("Sending message...");
-						outStream.write(envelope.msg);
-
-						debugMsg("Flushing...");
-						outStream.flush();
-
-						debugMsg("Sent!");
-
-					} catch (IOException e) {
-						debugMsg("Outbound Handler: IOException Thrown!");
-						parent.out = null;
-						break;
-						// TODO Handle send failure better.
+					if (wrote != size) {
+						debugMsg("Write Error: Wrote " + wrote + " of " + size
+								+ " bytes.");
+					}
+					else if (wrote < 0){
+						debugMsg("Write Error: " + wrote);
 					}
 				}
 
 				Thread.yield();
-			}
-
-			// Attempt to close stream.
-			try {
-				debugMsg("Attempting to close output stream...");
-				outStream.close();
-			} catch (IOException e) {
-				debugMsg("Couldn't close output stream.");
 			}
 		}
 	}
