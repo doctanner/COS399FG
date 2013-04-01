@@ -14,6 +14,7 @@ import lejos.nxt.Motor;
 import lejos.nxt.SensorPort;
 import lejos.nxt.Sound;
 import lejos.robotics.RegulatedMotor;
+import lejos.util.Delay;
 
 /**
  * The FindGoal class contains all of the sub-classes for this assignment.
@@ -54,7 +55,7 @@ public class FindGoal {
 	private static final ColorSensor sense = new ColorSensor(SENSE_PORT);
 
 	// Communications:
-	static Comms comms = new Comms();
+	static Comms comms;
 	static Comms.Connection turret;
 	static String turretName = "Alien";
 	static boolean hasTurret;
@@ -70,24 +71,55 @@ public class FindGoal {
 	 */
 	public static void main(String[] args) {
 		// TODO Calibrate sensor.
+		
+		Comms.openDebugging();
 
 		// Start pilot.
 		Pilot pilot = new Pilot();
 		pilot.setDaemon(true);
 		pilot.start();
 
-		// Wait for connection from turret.
+		// Get connection from turret.
+		LCD.drawString("Starting Comms...", 0, 0);
+		comms = new Comms();
+		LCD.clear(0);
+		LCD.drawString("Waiting....", 0, 0);
 		hasTurret = connectToTurret();
-		
-		Comms.Message msg = new Comms.Message("Made connection!");
-		turret.send(msg);
+
+		LCD.drawString("Turret Found!", 0, 0);
+
+		int i = 1;
+		int pressed;
+		Comms.Message msg;
+		do {
+			LCD.drawString("Send Message " + i + "?", 0, 4);
+			pressed = Button.waitForAnyPress();
+
+			if (pressed == Button.ID_ENTER) {
+				LCD.clear(4);
+				LCD.drawString("Sending...", 0, 4);
+				msg = new Comms.Message("Hello #" + i++);
+				if (turret.send(msg)){
+					LCD.clear(4);
+					LCD.drawString("Sent!", 0, 4);
+					Button.ENTER.waitForPressAndRelease();
+				}
+				else{
+					Button.ENTER.waitForPressAndRelease();
+				}
+			}
+
+		} while (pressed != Button.ID_ESCAPE);
+
+		LCD.drawString("Send Message?", 0, 4);
+		Button.ENTER.waitForPressAndRelease();
 
 		// Wait to start.
 		Button.ENTER.waitForPressAndRelease();
-		
+		LCD.clear(0);
+
 		msg = new Comms.Message("Searching...");
 		turret.send(msg);
-
 
 		// Find the goal.
 		searchForGoal(pilot, MODE_CURRENT);
@@ -123,7 +155,7 @@ public class FindGoal {
 
 		// Wait for permission to stop.
 		Button.ESCAPE.waitForPressAndRelease();
-		
+
 		turret.close();
 	}
 
@@ -131,6 +163,7 @@ public class FindGoal {
 		// Attempt to connect to turret.
 		do {
 			turret = comms.getConnection(turretName, false);
+			Delay.msDelay(100);
 		} while (turret == null && Button.ESCAPE.isUp());
 
 		return turret == null ? false : turret.isConnected();
