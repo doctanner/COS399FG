@@ -213,7 +213,11 @@ public class Comms {
 			out.interrupt();
 			out = null;
 		}
+		try{
 		btc.close();
+		} catch (Exception e){
+			// Do nothing;
+		}
 		btc = null;
 	}
 

@@ -85,7 +85,8 @@ public class Base {
 		comms = new Comms();
 		LCD.clear(0);
 		LCD.drawString("Waiting....", 0, 0);
-		hasTurret = connectToTurret();
+		//hasTurret = connectToTurret();
+		hasTurret = false;
 
 		LCD.drawString("Turret Connected.", 0, 0);
 
